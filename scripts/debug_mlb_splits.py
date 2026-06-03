@@ -1,4 +1,4 @@
- import json
+import json
 import requests
 
 PLAYER_ID = 668715  # Spencer Steer
