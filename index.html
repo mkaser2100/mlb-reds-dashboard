@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>Reds Hitter Lab</title>
+
+  <link rel="stylesheet" href="./styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+
+<body>
+  <div class="app-layout">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">R</div>
+        <div>
+          <div class="brand-title">Reds Lab</div>
+          <div class="brand-subtitle">Hitter Intelligence</div>
+        </div>
+      </div>
+
+      <nav class="nav">
+        <button class="nav-item active">
+          <span>⌁</span>
+          Hot Board
+        </button>
+        <button class="nav-item disabled">
+          <span>◇</span>
+          Consistency
+        </button>
+        <button class="nav-item disabled">
+          <span>↔</span>
+          Splits
+        </button>
+        <button class="nav-item disabled">
+          <span>◎</span>
+          Matchups
+        </button>
+      </nav>
+
+      <div class="sidebar-card">
+        <div class="mini-label">Model</div>
+        <div class="mini-title">Hot Score™</div>
+        <p>
+          Weighted signal combining contact consistency, average, power, walks,
+          and current hit streak momentum.
+        </p>
+      </div>
+
+      <div class="sidebar-footer">
+        <div class="mini-label">Stack</div>
+        <div>GitHub Pages</div>
+        <div>Supabase</div>
+        <div>MLB Game Logs</div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div>
+          <div class="eyebrow">Cincinnati Reds · Rolling Player Form</div>
+          <h1>Hitter Intelligence Center</h1>
+        </div>
+
+        <div class="topbar-actions">
+          <div class="live-pill">
+            <span class="pulse"></span>
+            Live Supabase Feed
+          </div>
+          <button class="refresh-button" id="refreshButton">Refresh</button>
+        </div>
+      </header>
+
+      <section class="hero-grid">
+        <article class="insight-card primary-insight">
+          <div class="card-topline">
+            <span>Top Signal</span>
+            <span id="activeWindowLabel">Last 10 Games</span>
+          </div>
+          <div class="hero-player" id="heroPlayer">—</div>
+          <div class="hero-score" id="heroScore">Hot Score —</div>
+          <p id="heroNarrative">
+            Loading hitter form model...
+          </p>
+        </article>
+
+        <article class="insight-card compact">
+          <div class="metric-icon">⚾</div>
+          <div class="metric-label">Best AVG</div>
+          <div class="metric-value" id="kpiAvg">—</div>
+          <div class="metric-sub" id="kpiAvgSub">Waiting for data</div>
+        </article>
+
+        <article class="insight-card compact">
+          <div class="metric-icon">💣</div>
+          <div class="metric-label">Most HR</div>
+          <div class="metric-value" id="kpiHr">—</div>
+          <div class="metric-sub" id="kpiHrSub">Waiting for data</div>
+        </article>
+
+        <article class="insight-card compact">
+          <div class="metric-icon">📈</div>
+          <div class="metric-label">Best Hit Rate</div>
+          <div class="metric-value" id="kpiHitRate">—</div>
+          <div class="metric-sub" id="kpiHitRateSub">Waiting for data</div>
+        </article>
+      </section>
+
+      <section class="control-deck">
+        <div class="control-group">
+          <div class="control-label">Rolling Window</div>
+          <div class="segmented" id="windowButtons">
+            <button class="segment" data-window="3">3</button>
+            <button class="segment" data-window="5">5</button>
+            <button class="segment" data-window="6">6</button>
+            <button class="segment active" data-window="10">10</button>
+            <button class="segment" data-window="15">15</button>
+          </div>
+        </div>
+
+        <div class="control-group grow">
+          <div class="control-label">Search</div>
+          <div class="search-box">
+            <span>⌕</span>
+            <input id="playerSearch" type="text" placeholder="Search player..." />
+          </div>
+        </div>
+
+        <div class="control-group">
+          <div class="control-label">Sort</div>
+          <div class="sort-pill">Hot Score ↓</div>
+        </div>
+      </section>
+
+      <section class="model-strip">
+        <div class="model-header">
+          <div>
+            <div class="eyebrow">Data Science Signal</div>
+            <h2>Hot Score Formula</h2>
+          </div>
+          <p>
+            Built to reward hitters who are both producing and consistently showing up
+            in the box score.
+          </p>
+        </div>
+
+        <div class="formula-track">
+          <div class="formula-chip strong">42% Hit Rate</div>
+          <div class="formula-chip">24% AVG</div>
+          <div class="formula-chip">12% Hits/Game</div>
+          <div class="formula-chip">8% XBH/Game</div>
+          <div class="formula-chip">5% Walks/Game</div>
+          <div class="formula-chip">9% Streak</div>
+        </div>
+      </section>
+
+      <section class="board-card">
+        <div class="board-header">
+          <div>
+            <div class="eyebrow">Leaderboard</div>
+            <h2>Hot Board</h2>
+          </div>
+
+          <div class="board-meta">
+            <span id="statusPill">Loading...</span>
+            <span id="lastRefresh">Last refresh: —</span>
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th class="rank">#</th>
+                <th>Heat</th>
+                <th>Player</th>
+                <th class="num">Hot Score</th>
+                <th class="num">Hit Rate</th>
+                <th class="num">Streak</th>
+                <th class="num">AVG</th>
+                <th class="num">AB</th>
+                <th class="num">H</th>
+                <th class="num">2B</th>
+                <th class="num">3B</th>
+                <th class="num">HR</th>
+                <th class="num">BB</th>
+                <th class="num">SB</th>
+                <th class="num">RBI</th>
+                <th class="num">K</th>
+                <th>Latest</th>
+              </tr>
+            </thead>
+
+            <tbody id="hittersTableBody">
+              <tr>
+                <td colspan="17" class="empty-state">Loading Reds hitter data...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="./app.js"></script>
+</body>
+</html>
