@@ -101,6 +101,70 @@ def get_roster_players() -> List[Dict[str, Any]]:
 
     return player_rows
 
+def ensure_players_exist(all_logs: List[Dict[str, Any]]):
+    """
+    Some players may appear in 2026 Reds game logs even if they are no longer
+    on the current active roster. This function inserts those missing players
+    into mlb_players before we insert game logs, preventing foreign key errors.
+    """
+    if not all_logs:
+        print("No game logs found, skipping missing player check")
+        return
+
+    player_ids = sorted(list(set(row["player_id"] for row in all_logs)))
+
+    existing_response = (
+        supabase
+        .table("mlb_players")
+        .select("player_id")
+        .in_("player_id", player_ids)
+        .execute()
+    )
+
+    existing_ids = {
+        row["player_id"]
+        for row in existing_response.data
+    }
+
+    missing_ids = [
+        player_id
+        for player_id in player_ids
+        if player_id not in existing_ids
+    ]
+
+    print(f"Missing historical players found: {len(missing_ids)}")
+
+    missing_player_rows = []
+
+    for player_id in missing_ids:
+        try:
+            data = mlb_get(f"/people/{player_id}")
+            people = data.get("people", [])
+
+            if not people:
+                print(f"No MLB person data found for player {player_id}")
+                continue
+
+            person = people[0]
+
+            missing_player_rows.append({
+                "player_id": player_id,
+                "full_name": person.get("fullName", f"Unknown Player {player_id}"),
+                "team_id": TEAM_ID,
+                "team_name": "Cincinnati Reds",
+                "active": False,
+                "primary_position": person.get("primaryPosition", {}).get("abbreviation"),
+                "bats": person.get("batSide", {}).get("code"),
+                "throws": person.get("pitchHand", {}).get("code"),
+                "mlb_link": person.get("link"),
+            })
+
+            time.sleep(0.1)
+
+        except Exception as exc:
+            print(f"Failed to fetch missing player {player_id}: {exc}")
+
+    upsert("mlb_players", missing_player_rows, "player_id")
 
 def get_team_schedule() -> List[Dict[str, Any]]:
     data = mlb_get(
@@ -238,6 +302,11 @@ def main():
         except Exception as exc:
             print(f"Failed loading game {game.get('game_pk')}: {exc}")
 
+    print(f"Total batting game log rows: {len(all_logs)}")
+ensure_players_exist(all_logs)
+upsert("mlb_player_batting_game_logs", all_logs, "player_id,game_pk")
+
+print("Reds batting load completed")
     print(f"Total batting game log rows: {len(all_logs)}")
     upsert("mlb_player_batting_game_logs", all_logs, "player_id,game_pk")
 
