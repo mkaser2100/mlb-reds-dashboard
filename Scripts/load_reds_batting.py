@@ -17,7 +17,7 @@ TEAM_ID = int(os.getenv("MLB_TEAM_ID", "113"))
 SEASON = int(os.getenv("MLB_SEASON", "2026"))
 
 MLB_BASE_URL = "https://statsapi.mlb.com/api/v1"
-
+SCRIPT_VERSION = "v2_missing_player_fix"
 
 if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
     print("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY")
