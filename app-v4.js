@@ -325,6 +325,93 @@ function renderTable() {
 
   setHtml("hittersTableBody", html);
 }
+function confidenceLabel(matchup) {
+  if (!matchup) return "—";
+
+  const batterReliability = Number(matchup.batter_split_reliability || 0);
+  const pitcherReliability = Number(matchup.pitcher_split_reliability || 0);
+  const avgReliability = (batterReliability + pitcherReliability) / 2;
+
+  if (avgReliability >= 0.75) return "High";
+  if (avgReliability >= 0.45) return "Medium";
+  return "Low";
+}
+
+function breakdownRow(label, score, weight, note) {
+  const s = Number(score || 0);
+  const contribution = s * weight;
+  const width = Math.max(4, Math.min(100, s));
+
+  return `
+    <div class="breakdown-row">
+      <div class="breakdown-top">
+        <div>
+          <strong>${label}</strong>
+          <span>${note}</span>
+        </div>
+        <div class="breakdown-score">${s.toFixed(1)}</div>
+      </div>
+
+      <div class="breakdown-bar">
+        <div class="breakdown-fill" style="width: ${width}%"></div>
+      </div>
+
+      <div class="breakdown-contribution">
+        Weight ${(weight * 100).toFixed(0)}% · Contribution +${contribution.toFixed(1)}
+      </div>
+    </div>
+  `;
+}
+
+function renderScoreBreakdown(matchup) {
+  const el = $("drawerScoreBreakdown");
+  if (!el) return;
+
+  if (!matchup) {
+    el.innerHTML = `<div class="empty-mini">No matchup breakdown available.</div>`;
+    return;
+  }
+
+  const confidence = confidenceLabel(matchup);
+
+  el.innerHTML = `
+    <div class="confidence-pill">
+      Confidence: ${confidence}
+      <span>
+        Batter reliability ${Math.round(Number(matchup.batter_split_reliability || 0) * 100)}% ·
+        Pitcher reliability ${Math.round(Number(matchup.pitcher_split_reliability || 0) * 100)}%
+      </span>
+    </div>
+
+    ${breakdownRow(
+      "Recent Form",
+      matchup.recent_form_score,
+      0.40,
+      `Last ${selectedWindow} games`
+    )}
+
+    ${breakdownRow(
+      "Batter Split",
+      matchup.batter_split_score,
+      0.30,
+      `${matchup.batter_split_label || "Split"} · ${fmtAvg(matchup.batter_split_avg)} AVG · ${fmtNum(matchup.batter_split_ab)} AB`
+    )}
+
+    ${breakdownRow(
+      "Pitcher Vulnerability",
+      matchup.pitcher_vulnerability_score,
+      0.20,
+      `${matchup.pitcher_split_label || "Pitcher split"} · ${fmtAvg(matchup.pitcher_baa_split)} BAA`
+    )}
+
+    ${breakdownRow(
+      "Pitcher Recent Form",
+      matchup.pitcher_recent_form_score,
+      0.10,
+      `Last 5 starts · ${fmtDecimal(matchup.pitcher_last5_era, 2)} ERA · ${fmtDecimal(matchup.pitcher_last5_whip, 2)} WHIP`
+    )}
+  `;
+}
 
 function openDrawer(playerId) {
   const hot = findHot(playerId);
@@ -344,6 +431,7 @@ function openDrawer(playerId) {
   setText("drawerRecentFormScore", matchup ? fmtDecimal(matchup.recent_form_score, 1) : "—");
   setText("drawerSplitScore", matchup ? fmtDecimal(matchup.batter_split_score, 1) : "—");
   setText("drawerMatchupExplanation", matchup?.explanation || "No matchup explanation available yet.");
+  renderScoreBreakdown(matchup);
 
   setText("drawerHotScore", hot ? Number(hot.hot_score || 0).toFixed(1) : "—");
   setText("drawerAvg", hot ? fmtAvg(hot.batting_average) : "—");
