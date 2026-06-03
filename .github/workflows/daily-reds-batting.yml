@@ -23,10 +23,18 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Load Reds batting data
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          MLB_TEAM_ID: "113"
-          MLB_SEASON: "2026"
-        run: python scripts/load_reds_batting.py
+      - name: Load Reds batting game logs
+  env:
+    SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+    SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+    MLB_TEAM_ID: "113"
+    MLB_SEASON: "2026"
+  run: python scripts/load_reds_batting.py
+
+- name: Load Reds batting splits
+  env:
+    SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+    SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+    MLB_TEAM_ID: "113"
+    MLB_SEASON: "2026"
+  run: python scripts/load_reds_splits.py
