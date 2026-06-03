@@ -1,0 +1,50 @@
+name: Daily Reds Data Load
+
+on:
+  workflow_dispatch:
+
+  schedule:
+    - cron: "0 9 * * *"   # 5:00 AM ET during DST
+    - cron: "0 21 * * *"  # 5:00 PM ET during DST
+
+jobs:
+  load-reds-data:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set Up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests supabase python-dotenv
+
+      #################################################
+      # Reds Batting Loader
+      #################################################
+
+      - name: Load Reds Batting Data
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          MLB_TEAM_ID: "113"
+          MLB_SEASON: "2026"
+        run: python scripts/load_reds_batting.py
+
+      #################################################
+      # Reds Matchup Loader
+      #################################################
+
+      - name: Load Reds Matchup Data
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          MLB_TEAM_ID: "113"
+          MLB_SEASON: "2026"
+        run: python scripts/load_reds_matchup.py
