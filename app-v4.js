@@ -1,5 +1,4 @@
-alert("APP JS LOADED - SPLITS VERSION 3");
-console.log("APP JS LOADED - SPLITS VERSION 3");
+alert("APP V4 LOADED");
 
 const SUPABASE_URL = "https://squcmdsivnnxzblsfciu.supabase.co";
 const SUPABASE_KEY = "sb_publishable_pumFxQJ7pYyRC8lrjSvtZA_x63TVYtq";
