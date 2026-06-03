@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>Reds Hitter Intelligence Center</title>
+
+  <link rel="stylesheet" href="./styles.css" />
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+
+<body>
+  <div class="app-shell">
+    <header class="hero">
+      <div>
+        <div class="eyebrow">Cincinnati Reds · Player Intelligence</div>
+        <h1>Reds Hitter Intelligence Center</h1>
+        <p class="subtitle">
+          Rolling-form analytics powered by Supabase, MLB game logs, and a custom Hot Score model.
+        </p>
+      </div>
+
+      <div class="hero-panel">
+        <div class="panel-label">Model</div>
+        <div class="panel-value">Hot Score™</div>
+        <div class="panel-subtext">Hit rate · AVG · power · walks · streaks</div>
+      </div>
+    </header>
+
+    <section class="toolbar">
+      <div>
+        <div class="section-label">Rolling Window</div>
+        <div class="window-buttons" id="windowButtons">
+          <button class="window-button" data-window="3">Last 3</button>
+          <button class="window-button" data-window="5">Last 5</button>
+          <button class="window-button" data-window="6">Last 6</button>
+          <button class="window-button active" data-window="10">Last 10</button>
+          <button class="window-button" data-window="15">Last 15</button>
+        </div>
+      </div>
+
+      <div class="search-wrap">
+        <label for="playerSearch">Search Player</label>
+        <input id="playerSearch" type="text" placeholder="Type a name..." />
+      </div>
+    </section>
+
+    <section class="kpi-grid">
+      <article class="kpi-card">
+        <div class="kpi-label">Hottest Hitter</div>
+        <div class="kpi-value" id="kpiHottest">—</div>
+        <div class="kpi-sub" id="kpiHottestSub">Waiting for data</div>
+      </article>
+
+      <article class="kpi-card">
+        <div class="kpi-label">Best AVG</div>
+        <div class="kpi-value" id="kpiAvg">—</div>
+        <div class="kpi-sub" id="kpiAvgSub">Waiting for data</div>
+      </article>
+
+      <article class="kpi-card">
+        <div class="kpi-label">Most HR</div>
+        <div class="kpi-value" id="kpiHr">—</div>
+        <div class="kpi-sub" id="kpiHrSub">Waiting for data</div>
+      </article>
+
+      <article class="kpi-card">
+        <div class="kpi-label">Best Hit Rate</div>
+        <div class="kpi-value" id="kpiHitRate">—</div>
+        <div class="kpi-sub" id="kpiHitRateSub">Waiting for data</div>
+      </article>
+    </section>
+
+    <section class="model-card">
+      <div>
+        <div class="section-label">Data Science Signal</div>
+        <h2>Hot Score Formula</h2>
+      </div>
+
+      <div class="formula-grid">
+        <span>42% Hit Rate</span>
+        <span>24% Batting AVG</span>
+        <span>12% Hits/Game</span>
+        <span>8% XBH/Game</span>
+        <span>5% Walks/Game</span>
+        <span>9% Current Streak</span>
+      </div>
+    </section>
+
+    <section class="table-card">
+      <div class="table-header">
+        <div>
+          <div class="section-label">Leaderboard</div>
+          <h2>Hot Hitters</h2>
+        </div>
+
+        <div class="status-pill" id="statusPill">
+          Loading...
+        </div>
+      </div>
+
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Heat</th>
+              <th>Player</th>
+              <th class="num">Hot Score</th>
+              <th class="num">Hit Rate</th>
+              <th class="num">Streak</th>
+              <th class="num">AVG</th>
+              <th class="num">AB</th>
+              <th class="num">H</th>
+              <th class="num">2B</th>
+              <th class="num">3B</th>
+              <th class="num">HR</th>
+              <th class="num">BB</th>
+              <th class="num">SB</th>
+              <th class="num">RBI</th>
+              <th class="num">K</th>
+              <th>Latest</th>
+            </tr>
+          </thead>
+          <tbody id="hittersTableBody">
+            <tr>
+              <td colspan="16" class="empty-state">Loading Reds hitter data...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <footer>
+      <span>Built with GitHub Pages + Supabase</span>
+      <span id="lastRefresh">Last refresh: —</span>
+    </footer>
+  </div>
+
+  <script src="./app.js"></script>
+</body>
+</html>
