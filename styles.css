@@ -1194,3 +1194,145 @@ tbody tr:hover {
     grid-template-columns: 1fr;
   }
 }
+/* =========================
+   Today's Matchup UI
+   ========================= */
+
+.matchup-hero {
+  margin-bottom: 18px;
+  padding: 22px;
+  border: 1px solid rgba(56, 189, 248, 0.24);
+  border-radius: 28px;
+  background:
+    radial-gradient(circle at top left, rgba(56, 189, 248, 0.16), transparent 32%),
+    radial-gradient(circle at bottom right, rgba(239, 68, 68, 0.12), transparent 34%),
+    rgba(15, 23, 42, 0.84);
+  box-shadow: var(--shadow);
+}
+
+.matchup-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: flex-start;
+  margin-bottom: 18px;
+}
+
+.matchup-header h2 {
+  margin-top: 8px;
+  font-size: clamp(1.35rem, 2vw, 2rem);
+}
+
+.matchup-subtitle {
+  margin-top: 6px;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.matchup-score-pill {
+  border: 1px solid rgba(56, 189, 248, 0.34);
+  background: rgba(56, 189, 248, 0.12);
+  color: #bae6fd;
+  border-radius: 999px;
+  padding: 9px 13px;
+  font-size: 0.78rem;
+  font-weight: 950;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  white-space: nowrap;
+}
+
+.matchup-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.matchup-stat-card {
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  background: rgba(2, 6, 23, 0.42);
+  border-radius: 20px;
+  padding: 16px;
+}
+
+.matchup-stat-card .label {
+  color: var(--muted);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-weight: 900;
+}
+
+.matchup-stat-card .value {
+  margin-top: 8px;
+  color: white;
+  font-size: 1.3rem;
+  font-weight: 950;
+  line-height: 1.15;
+}
+
+.matchup-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 7px 10px;
+  font-size: 0.78rem;
+  font-weight: 950;
+  white-space: nowrap;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.matchup-strong {
+  color: #dcfce7;
+  background: rgba(34, 197, 94, 0.16);
+  border-color: rgba(34, 197, 94, 0.32);
+}
+
+.matchup-good {
+  color: #dbeafe;
+  background: rgba(59, 130, 246, 0.16);
+  border-color: rgba(59, 130, 246, 0.32);
+}
+
+.matchup-neutral {
+  color: #fef3c7;
+  background: rgba(245, 158, 11, 0.14);
+  border-color: rgba(245, 158, 11, 0.3);
+}
+
+.matchup-risk {
+  color: #fee2e2;
+  background: rgba(239, 68, 68, 0.14);
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+.drawer-explanation {
+  margin: 14px 0 0;
+  color: var(--muted);
+  line-height: 1.55;
+  font-size: 0.92rem;
+  border-top: 1px solid rgba(148, 163, 184, 0.14);
+  padding-top: 14px;
+}
+
+@media (max-width: 1050px) {
+  .matchup-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .matchup-header {
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 640px) {
+  .matchup-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .matchup-hero {
+    padding: 18px;
+    border-radius: 22px;
+  }
+}
