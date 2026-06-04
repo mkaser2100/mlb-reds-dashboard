@@ -180,12 +180,40 @@ async function loadMatchupData() {
   }
 }
 
+function formatGameDate(value) {
+  if (!value) return "—";
+
+  const date = new Date(`${value}T12:00:00`);
+
+  return date.toLocaleDateString([], {
+    weekday: "short",
+    month: "short",
+    day: "numeric"
+  });
+}
+
+function matchupTimingLabel(gameDate) {
+  if (!gameDate) return "Loaded Matchup";
+
+  const today = new Date();
+  const todayText = today.toISOString().slice(0, 10);
+
+  if (gameDate === todayText) return "Today's Matchup";
+  if (gameDate > todayText) return "Next Game";
+
+  return "Latest Loaded Matchup";
+}
+
 function renderMatchupHero() {
   const first = matchupRows[0];
 
   if (!first) {
     setText("matchupOpponent", "No matchup loaded");
-    setText("matchupPitcher", "Run the matchup loader to populate today’s probable starter.");
+    setText(
+      "matchupPitcher",
+      "Run the matchup loader to populate today's or next game's probable starter."
+    );
+
     setText("pitcherNameCard", "—");
     setText("pitcherThrows", "—");
     setText("pitcherEra", "—");
@@ -193,9 +221,20 @@ function renderMatchupHero() {
     return;
   }
 
-  setText("matchupOpponent", `Reds vs ${first.opponent_team_name || "Opponent"}`);
-  setText("matchupPitcher", `${first.pitcher_name || "Probable Starter"} · ${first.pitcher_throws || "?"}HP`);
-  setText("pitcherNameCard", first.pitcher_name || "—");
+  const timing = matchupTimingLabel(first.game_date);
+  const gameDate = formatGameDate(first.game_date);
+
+  setText(
+    "matchupOpponent",
+    `${timing}: Reds vs ${first.opponent_team_name || "Opponent"}`
+  );
+
+  setText(
+    "matchupPitcher",
+    `${gameDate} · ${first.pitcher_name || "Probable Starter TBD"}${first.pitcher_throws ? ` · ${first.pitcher_throws}HP` : ""}`
+  );
+
+  setText("pitcherNameCard", first.pitcher_name || "TBD");
   setText("pitcherThrows", first.pitcher_throws || "—");
   setText("pitcherEra", fmtDecimal(first.pitcher_last5_era, 2));
   setText("pitcherWhip", fmtDecimal(first.pitcher_last5_whip, 2));
