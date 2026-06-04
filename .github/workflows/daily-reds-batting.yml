@@ -4,8 +4,8 @@ on:
   workflow_dispatch:
 
   schedule:
-    - cron: "0 9 * * *"   # 5:00 AM ET during DST
-    - cron: "0 21 * * *"  # 5:00 PM ET during DST
+    - cron: "17 9 * * *"   # 5:17 AM ET during DST
+    - cron: "17 21 * * *"  # 5:17 PM ET during DST
 
 jobs:
   load-reds-data:
