@@ -60,3 +60,15 @@ jobs:
           MLB_TEAM_ID: "113"
           MLB_SEASON: "2026"
         run: python scripts/load_reds_matchup.py
+
+      #################################################
+      # Batter vs Pitcher History Loader
+      #################################################
+
+      - name: Load Batter vs Pitcher History
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          MLB_TEAM_ID: "113"
+          MLB_SEASON: "2026"
+        run: python scripts/load_batter_vs_pitcher.py
