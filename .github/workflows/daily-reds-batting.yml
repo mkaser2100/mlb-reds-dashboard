@@ -84,3 +84,14 @@ jobs:
           MLB_TEAM_ID: "113"
           MATCHUP_WINDOW: "10"
         run: python scripts/save_matchup_predictions.py
+
+      #################################################
+      # Update Prediction Actuals
+      #################################################
+
+      - name: Update Prediction Actuals
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          MLB_TEAM_ID: "113"
+        run: python scripts/update_prediction_actuals.py
