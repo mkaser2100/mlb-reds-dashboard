@@ -60,40 +60,52 @@ def get_latest_matchup():
 
 
 def get_active_hitters():
-    response = (
-        supabase.table("mlb_players")
-        .select("player_id, full_name, team_id, active, primary_position")
-        .eq("team_id", TEAM_ID)
-        .eq("active", True)
-        .execute()
-    )
+    response = supabase.rpc(
+        "get_team_hot_hitters",
+        {
+            "p_team_id": TEAM_ID,
+            "p_last_n": 10,
+        },
+    ).execute()
 
     rows = response.data or []
 
     print("=" * 80)
-    print("DEBUG: Raw active player rows returned from Supabase")
-    print(f"TEAM_ID filter: {TEAM_ID}")
-    print(f"Rows returned before position filtering: {len(rows)}")
+    print("DEBUG: Hitter rows returned from get_team_hot_hitters")
+    print(f"TEAM_ID: {TEAM_ID}")
+    print(f"Rows returned: {len(rows)}")
+
+    hitters = []
 
     for row in rows:
-        print(
-            f"PLAYER DEBUG | "
-            f"id={row.get('player_id')} | "
-            f"name={row.get('full_name')} | "
-            f"team_id={row.get('team_id')} | "
-            f"active={row.get('active')} | "
-            f"primary_position={row.get('primary_position')}"
+        name = row.get("full_name") or ""
+        player_id = row.get("player_id")
+
+        if not player_id:
+            continue
+
+        if name.startswith("Historical Reds Player"):
+            continue
+
+        if name.startswith("Unknown Player"):
+            continue
+
+        hitters.append(
+            {
+                "player_id": player_id,
+                "full_name": name,
+                "active": True,
+                "primary_position": row.get("primary_position"),
+            }
         )
 
-    excluded_positions = {"P", "SP", "RP", "Pitcher"}
+        print(
+            f"HITTER DEBUG | "
+            f"id={player_id} | "
+            f"name={name}"
+        )
 
-    hitters = [
-        row
-        for row in rows
-        if (row.get("primary_position") or "") not in excluded_positions
-    ]
-
-    print(f"Rows after position filtering: {len(hitters)}")
+    print(f"Hitters used for BvP lookup: {len(hitters)}")
     print("=" * 80)
 
     return hitters
