@@ -38,14 +38,14 @@ def get_unscored_games():
 
 def get_game_batting_logs(game_pk):
     response = (
-        supabase.table("mlb_player_batting_game_logs")
-        .select(
-            "game_pk, game_date, player_id, full_name, at_bats, hits, "
-            "home_runs, rbi, walks, strikeouts"
-        )
-        .eq("game_pk", game_pk)
-        .execute()
+    supabase.table("mlb_player_batting_game_logs")
+    .select(
+        "game_pk, game_date, player_id, at_bats, hits, "
+        "home_runs, rbi, walks, strikeouts"
     )
+    .eq("game_pk", game_pk)
+    .execute()
+)
 
     rows = response.data or []
 
