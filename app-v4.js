@@ -10,6 +10,7 @@ let selectedWindow = 10;
 let hotRows = [];
 let splitRows = [];
 let matchupRows = [];
+let bvpRows = [];
 let searchTerm = "";
 
 function $(id) {
@@ -96,6 +97,10 @@ function findMatchup(playerId) {
   return matchupRows.find((x) => String(x.player_id) === String(playerId));
 }
 
+function findBvp(playerId) {
+  return bvpRows.find((x) => String(x.player_id) === String(playerId));
+}
+
 function filteredRows() {
   const q = searchTerm.trim().toLowerCase();
   if (!q) return hotRows;
@@ -132,9 +137,10 @@ async function loadHotData() {
     renderTable();
 
     await Promise.all([
-      loadSplitsData(),
-      loadMatchupData()
-    ]);
+  loadSplitsData(),
+  loadMatchupData(),
+  loadBvpData()
+]);
 
     renderMatchupHero();
     renderTable();
@@ -177,6 +183,21 @@ async function loadMatchupData() {
   } catch (err) {
     console.error("Error loading matchup data:", err);
     matchupRows = [];
+  }
+}
+
+async function loadBvpData() {
+  try {
+    const { data, error } = await client
+      .from("v_today_batter_vs_pitcher")
+      .select("*");
+
+    if (error) throw error;
+
+    bvpRows = data || [];
+  } catch (err) {
+    console.error("Error loading batter-vs-pitcher history:", err);
+    bvpRows = [];
   }
 }
 
@@ -457,10 +478,70 @@ function renderScoreBreakdown(matchup) {
   `;
 }
 
+function renderBvpSection(bvp, matchup) {
+  const pitcherName =
+    bvp?.pitcher_name ||
+    matchup?.pitcher_name ||
+    "today's pitcher";
+
+  if (!bvp) {
+    return `
+      <section class="drawer-section">
+        <div class="drawer-section-title">Vs Today’s Pitcher</div>
+        <p class="drawer-explanation">
+          No prior plate appearances against ${pitcherName}.
+        </p>
+      </section>
+    `;
+  }
+
+  return `
+    <section class="drawer-section">
+      <div class="drawer-section-title">Vs Today’s Pitcher</div>
+      <p class="drawer-explanation">
+        Career history vs ${pitcherName}. Small samples should be treated as context, not prediction.
+      </p>
+
+      <div class="drawer-splits-grid">
+        <div class="split-tile">
+          <span>AVG</span>
+          <strong>${fmtAvg(bvp.batting_average)}</strong>
+          <small>${fmtNum(bvp.at_bats)} AB</small>
+        </div>
+
+        <div class="split-tile">
+          <span>Hits</span>
+          <strong>${fmtNum(bvp.hits)}</strong>
+          <small>${fmtNum(bvp.at_bats)} AB</small>
+        </div>
+
+        <div class="split-tile">
+          <span>HR</span>
+          <strong>${fmtNum(bvp.home_runs)}</strong>
+          <small>${fmtNum(bvp.rbi)} RBI</small>
+        </div>
+
+        <div class="split-tile">
+          <span>BB / K</span>
+          <strong>${fmtNum(bvp.walks)} / ${fmtNum(bvp.strikeouts)}</strong>
+          <small>career</small>
+        </div>
+
+        <div class="split-tile">
+          <span>OPS</span>
+          <strong>${fmtAvg(bvp.ops)}</strong>
+          <small>career</small>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
 function openDrawer(playerId) {
   const hot = findHot(playerId);
   const split = findSplit(playerId);
   const matchup = findMatchup(playerId);
+  const bvp = findBvp(playerId);
 
   const name = hot?.full_name || split?.full_name || matchup?.full_name || "Unknown Player";
 
@@ -507,6 +588,19 @@ function openDrawer(playerId) {
   setText("drawerNightAvg", split ? fmtAvg(split.night_avg) : "—");
   setText("drawerNightAb", split ? `${fmtNum(split.night_ab)} AB` : "— AB");
 
+const drawerBody = document.querySelector(".drawer-body");
+const existingBvp = document.getElementById("drawerBvpSection");
+
+if (existingBvp) {
+  existingBvp.remove();
+}
+
+if (drawerBody) {
+  const wrapper = document.createElement("div");
+  wrapper.id = "drawerBvpSection";
+  wrapper.innerHTML = renderBvpSection(bvp, matchup);
+  drawerBody.appendChild(wrapper);
+}
   $("playerDrawer")?.classList.add("open");
   $("drawerBackdrop")?.classList.add("open");
 }
