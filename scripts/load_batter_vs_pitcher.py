@@ -62,7 +62,7 @@ def get_latest_matchup():
 def get_active_hitters():
     response = (
         supabase.table("mlb_players")
-        .select("player_id, full_name, active, primary_position")
+        .select("player_id, full_name, team_id, active, primary_position")
         .eq("team_id", TEAM_ID)
         .eq("active", True)
         .execute()
@@ -70,13 +70,31 @@ def get_active_hitters():
 
     rows = response.data or []
 
-    excluded_positions = {"P", "SP", "RP"}
+    print("=" * 80)
+    print("DEBUG: Raw active player rows returned from Supabase")
+    print(f"TEAM_ID filter: {TEAM_ID}")
+    print(f"Rows returned before position filtering: {len(rows)}")
+
+    for row in rows:
+        print(
+            f"PLAYER DEBUG | "
+            f"id={row.get('player_id')} | "
+            f"name={row.get('full_name')} | "
+            f"team_id={row.get('team_id')} | "
+            f"active={row.get('active')} | "
+            f"primary_position={row.get('primary_position')}"
+        )
+
+    excluded_positions = {"P", "SP", "RP", "Pitcher"}
 
     hitters = [
         row
         for row in rows
         if (row.get("primary_position") or "") not in excluded_positions
     ]
+
+    print(f"Rows after position filtering: {len(hitters)}")
+    print("=" * 80)
 
     return hitters
 
