@@ -369,10 +369,15 @@ function confidenceLabel(matchup) {
 
   const batterReliability = Number(matchup.batter_split_reliability || 0);
   const pitcherReliability = Number(matchup.pitcher_split_reliability || 0);
-  const avgReliability = (batterReliability + pitcherReliability) / 2;
 
-  if (avgReliability >= 0.75) return "High";
-  if (avgReliability >= 0.45) return "Medium";
+  // Confidence should reflect the hitter split more than the pitcher split,
+  // but not punish too harshly when the pitcher-side sample is meaningful.
+  const confidenceScore =
+    (batterReliability * 0.60) +
+    (pitcherReliability * 0.40);
+
+  if (confidenceScore >= 0.50) return "High";
+  if (confidenceScore >= 0.25) return "Medium";
   return "Low";
 }
 
