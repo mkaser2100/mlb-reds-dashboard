@@ -85,8 +85,8 @@ def mark_no_game_log(player_id, game_pk):
     payload = {
         "actual_loaded": True,
         "actual_at_bats": 0,
-        "actual_hits": 0,
-        "actual_got_hit": False,
+        "actual_hits": None,
+        "actual_got_hit": None,
         "actual_home_runs": 0,
         "actual_rbi": 0,
         "actual_walks": 0,
