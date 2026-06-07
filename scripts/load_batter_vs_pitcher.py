@@ -246,22 +246,8 @@ def main():
 
         time.sleep(0.15)
 
-    deduped_rows = {}
-
-for row in rows:
-    key = (
-        row.get("season"),
-        row.get("batter_id"),
-        row.get("pitcher_id"),
-    )
-    deduped_rows[key] = row
-
-rows = list(deduped_rows.values())
-
-print(f"Rows after dedupe: {len(rows)}")
-
-upsert_rows(rows)
-
+    upsert_rows(rows)
+    
     print("Batter-vs-pitcher loader completed")
 
 
