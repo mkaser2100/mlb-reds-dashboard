@@ -1549,3 +1549,29 @@ tbody tr:hover {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* Handedness badges */
+
+.avatar {
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.03em;
+}
+
+.avatar.lhb {
+  background: rgba(96, 165, 250, 0.18);
+  border-color: rgba(96, 165, 250, 0.40);
+  color: #bfdbfe;
+}
+
+.avatar.rhb {
+  background: rgba(251, 146, 60, 0.18);
+  border-color: rgba(251, 146, 60, 0.40);
+  color: #fed7aa;
+}
+
+.avatar.sh {
+  background: rgba(139, 92, 246, 0.18);
+  border-color: rgba(139, 92, 246, 0.40);
+  color: #ddd6fe;
+}
