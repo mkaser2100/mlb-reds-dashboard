@@ -1,0 +1,57 @@
+name: Load All MLB Phase 1 Data
+
+on:
+  workflow_dispatch:
+    inputs:
+      date:
+        description: "Date to load, YYYY-MM-DD. Leave blank for runner current date."
+        required: false
+        default: ""
+      days_back:
+        description: "Recent game-log lookback days"
+        required: false
+        default: "21"
+      skip_splits:
+        description: "Skip hitter split loading for faster test run"
+        required: false
+        default: "false"
+  schedule:
+    - cron: "30 14 * * *"
+
+jobs:
+  load-all-mlb-phase-1:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install supabase
+
+      - name: Load all MLB phase 1 data
+        run: |
+          DATE_INPUT="${{ github.event.inputs.date }}"
+          DAYS_BACK="${{ github.event.inputs.days_back || '21' }}"
+          SKIP_SPLITS="${{ github.event.inputs.skip_splits || 'false' }}"
+
+          CMD="python scripts/load_all_mlb_phase1.py --days-back ${DAYS_BACK}"
+          if [ -n "$DATE_INPUT" ]; then
+            CMD="$CMD --date $DATE_INPUT"
+          fi
+          if [ "$SKIP_SPLITS" = "true" ]; then
+            CMD="$CMD --skip-splits"
+          fi
+          echo "$CMD"
+          eval "$CMD"
