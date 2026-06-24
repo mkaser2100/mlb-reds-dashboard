@@ -10,7 +10,7 @@ on:
       days_back:
         description: "Recent game-log lookback days"
         required: false
-        default: "21"
+        default: "7"
       skip_splits:
         description: "Skip hitter split loading for faster test run"
         required: false
