@@ -1,0 +1,35 @@
+name: Load Hit Prop Market Odds
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Runs every morning at 9:30 AM Eastern (13:30 UTC during EDT)
+    # Adjust if you'd like odds refreshed more frequently.
+    - cron: "30 13 * * *"
+
+jobs:
+  load-hit-prop-market-odds:
+    runs-on: ubuntu-latest
+
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      THE_ODDS_API_KEY: ${{ secrets.THE_ODDS_API_KEY }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-hit-prop-odds.txt
+
+      - name: Load MLB Hit Prop Odds
+        run: |
+          python scripts/load_hit_prop_market_odds.py
