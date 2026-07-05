@@ -1,53 +1,50 @@
-# Hit Prop Market Odds Loader
+# Hit Prop Odds Loader
 
-## Files to copy into your repo
+This loader pulls MLB `batter_hits` odds from The Odds API for DraftKings and Bet365 only.
 
-- `scripts/load_hit_prop_market_odds.py`
-- `requirements-hit-prop-odds.txt`
-- `.github/workflows/load-hit-prop-market-odds.yml`
-
-## GitHub secret to add
-
-Add this repository secret:
-
-- `THE_ODDS_API_KEY`
-
-You should already have:
+## GitHub secrets required
 
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
+- `THE_ODDS_API_KEY`
 
-## Recommended daily order
+## Schedule
 
-1. Refresh MLB game/matchup data.
-2. Generate V2/V3 predictions.
-3. Run `Load Hit Prop Market Odds`.
-4. UI reads from `v_mlb_hit_over05_market_edges_qualified`.
+The workflow runs twice daily during EDT:
 
-## Validation SQL
+- 8:00 AM EDT
+- 12:00 PM EDT
+
+It also supports manual runs from GitHub Actions.
+
+## Credit protection
+
+The script:
+
+- Fetches only today's MLB games by Eastern date.
+- Skips games that have already started.
+- Pulls only `batter_hits`.
+- Pulls only `draftkings,bet365`.
+- Logs estimated API calls per run.
+
+## Validate after running
+
+```sql
+select *
+from public.v_mlb_hit_over05_market_edges_qualified
+order by edge_rank;
+```
+
+Unmatched names:
+
+```sql
+select *
+from public.v_mlb_player_hit_prop_market_odds_unmatched;
+```
+
+Health:
 
 ```sql
 select *
 from public.v_mlb_hit_over05_market_edge_health;
-
-select *
-from public.v_mlb_hit_over05_market_edges_qualified
-order by edge_rank
-limit 25;
-
-select *
-from public.v_mlb_player_hit_prop_market_odds_unmatched
-limit 50;
 ```
-
-## Notes
-
-The script expects The Odds API style player prop payloads where player prop outcomes use:
-
-- `market.key = player_hits`
-- `outcome.name = Over`
-- `outcome.point = 0.5`
-- `outcome.description = player name`
-- `outcome.price = American odds`
-
-If your odds provider uses different names, adjust `extract_player_hit_rows()` only.
