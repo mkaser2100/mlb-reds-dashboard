@@ -3,9 +3,8 @@ name: Load Hit Prop Market Odds
 on:
   workflow_dispatch:
   schedule:
-    # Runs every morning at 9:30 AM Eastern (13:30 UTC during EDT)
-    # Adjust if you'd like odds refreshed more frequently.
-    - cron: "30 13 * * *"
+    # Refresh MLB player prop odds every hour
+    - cron: "0 * * * *"
 
 jobs:
   load-hit-prop-market-odds:
