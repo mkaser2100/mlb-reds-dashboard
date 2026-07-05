@@ -1,0 +1,33 @@
+name: Run V3 Hit Model
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Runs daily at 11:30 UTC. Adjust after your normal MLB/V2 refresh completes.
+    - cron: "30 11 * * *"
+
+jobs:
+  run-v3-hit-model:
+    runs-on: ubuntu-latest
+
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-v3-ml.txt
+
+      - name: Train and score V3 hit model
+        run: |
+          python scripts/train_score_v3_hit_model.py
