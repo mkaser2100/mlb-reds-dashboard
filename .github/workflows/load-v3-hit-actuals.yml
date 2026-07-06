@@ -1,0 +1,208 @@
+name: Load V3 Hit Actuals
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_date:
+        description: "Optional MLB prediction date to load actuals for, YYYY-MM-DD. Defaults to yesterday's Eastern date."
+        required: false
+        type: string
+      min_log_coverage_pct:
+        description: "Minimum batting-log coverage percentage required before loading actuals."
+        required: false
+        default: "85"
+        type: string
+
+  schedule:
+    # Runs daily at 12:15 UTC / 8:15 AM EDT.
+    # Make sure this runs AFTER your MLB batting game-log refresh.
+    - cron: "15 12 * * *"
+
+jobs:
+  load-v3-hit-actuals:
+    runs-on: ubuntu-latest
+
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      TARGET_DATE: ${{ github.event.inputs.target_date }}
+      MIN_LOG_COVERAGE_PCT: ${{ github.event.inputs.min_log_coverage_pct || '85' }}
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install supabase
+
+      - name: Preflight actuals data coverage
+        run: |
+          python - <<'PY'
+          import os
+          from datetime import datetime, timedelta
+          from zoneinfo import ZoneInfo
+          from supabase import create_client
+
+          supabase = create_client(
+              os.environ["SUPABASE_URL"],
+              os.environ["SUPABASE_SERVICE_ROLE_KEY"],
+          )
+
+          input_date = (os.getenv("TARGET_DATE") or "").strip()
+          target_date = input_date or (
+              datetime.now(ZoneInfo("America/New_York")).date() - timedelta(days=1)
+          ).isoformat()
+
+          min_coverage = float(os.getenv("MIN_LOG_COVERAGE_PCT") or "85")
+
+          print(f"Preflight for V3 actuals target date: {target_date}")
+          print(f"Minimum required batting-log coverage: {min_coverage:.1f}%")
+
+          predictions = (
+              supabase
+              .table("mlb_ml_predictions_v3")
+              .select("prediction_id,player_id,game_pk", count="exact")
+              .eq("target_name", "hit_1plus")
+              .eq("prediction_run_date", target_date)
+              .limit(1)
+              .execute()
+          )
+
+          prediction_count = predictions.count or 0
+          print(f"V3 prediction rows for {target_date}: {prediction_count}")
+
+          if prediction_count <= 0:
+              raise RuntimeError(
+                  f"No V3 predictions found for {target_date}. "
+                  "Run V3 Hit Model before loading actuals."
+              )
+
+          log_games = (
+              supabase
+              .table("mlb_player_batting_game_logs")
+              .select("game_pk", count="exact")
+              .eq("game_date", target_date)
+              .limit(1)
+              .execute()
+          )
+
+          batting_log_rows = log_games.count or 0
+          print(f"Batting game-log rows for {target_date}: {batting_log_rows}")
+
+          if batting_log_rows <= 0:
+              raise RuntimeError(
+                  f"No batting game logs found for {target_date}. "
+                  "Run the MLB game-log refresh before loading V3 actuals."
+              )
+
+          # Estimate coverage as: how many predicted player/game rows have a batting log.
+          # DNP players will not have logs, so this should not be expected to reach 100%.
+          # The threshold is intentionally configurable.
+          coverage_sql = f"""
+          select
+            count(*) as prediction_rows,
+            count(bg.player_id) as matched_batting_logs,
+            round((count(bg.player_id)::numeric / nullif(count(*),0)) * 100, 1) as coverage_pct
+          from public.mlb_ml_predictions_v3 p
+          left join public.mlb_player_batting_game_logs bg
+            on bg.game_pk = p.game_pk
+           and bg.player_id = p.player_id
+          where p.target_name = 'hit_1plus'
+            and p.prediction_run_date = date '{target_date}';
+          """
+
+          coverage = supabase.rpc("execute_sql", {"query": coverage_sql}).execute()
+          # Some projects do not expose an execute_sql RPC. Fall back to using the postgrest tables above if needed.
+          print("Coverage SQL result:")
+          print(coverage.data)
+          PY
+        continue-on-error: true
+
+      - name: Load V3 hit actuals and evaluation statuses
+        run: |
+          python - <<'PY'
+          import os
+          from datetime import datetime, timedelta
+          from zoneinfo import ZoneInfo
+          from supabase import create_client
+
+          supabase = create_client(
+              os.environ["SUPABASE_URL"],
+              os.environ["SUPABASE_SERVICE_ROLE_KEY"]
+          )
+
+          input_date = (os.getenv("TARGET_DATE") or "").strip()
+          target_date = input_date or (
+              datetime.now(ZoneInfo("America/New_York")).date() - timedelta(days=1)
+          ).isoformat()
+
+          min_coverage = float(os.getenv("MIN_LOG_COVERAGE_PCT") or "85")
+
+          print(f"Loading V3 hit actuals for prediction date: {target_date}")
+
+          # Lightweight coverage check using the status view after running the loader.
+          result = supabase.rpc(
+              "load_mlb_v3_actuals",
+              {
+                  "target_prediction_date": target_date,
+                  "target_name_filter": "hit_1plus"
+              }
+          ).execute()
+
+          print("load_mlb_v3_actuals result:")
+          print(result.data)
+
+          status = (
+              supabase
+              .table("v_mlb_ml_v3_actuals_load_status")
+              .select(
+                  "target_name,prediction_run_date,prediction_rows,"
+                  "actual_loaded_rows,actual_result_rows,played_rows,"
+                  "did_not_play_rows,pending_data_rows,game_not_loaded_rows,"
+                  "availability_rate_pct,actual_binary_rate,last_evaluation_update_at"
+              )
+              .eq("target_name", "hit_1plus")
+              .eq("prediction_run_date", target_date)
+              .limit(1)
+              .execute()
+          )
+
+          print("V3 actuals status:")
+          print(status.data)
+
+          if not status.data:
+              raise RuntimeError(
+                  f"No V3 prediction/status rows found for {target_date}. "
+                  "Confirm the V3 model ran for that date before loading actuals."
+              )
+
+          row = status.data[0]
+          prediction_rows = row.get("prediction_rows") or 0
+          played_rows = row.get("played_rows") or 0
+          dnp_rows = row.get("did_not_play_rows") or 0
+          pending_rows = (row.get("pending_data_rows") or 0) + (row.get("game_not_loaded_rows") or 0)
+
+          resolved_rows = played_rows + dnp_rows
+          resolved_pct = (resolved_rows / prediction_rows * 100) if prediction_rows else 0
+
+          print(f"Resolved rows: {resolved_rows}/{prediction_rows} ({resolved_pct:.1f}%)")
+          print(f"Played rows: {played_rows}")
+          print(f"DNP rows: {dnp_rows}")
+          print(f"Pending/game-not-loaded rows: {pending_rows}")
+
+          if pending_rows > 0 and resolved_pct < min_coverage:
+              raise RuntimeError(
+                  f"Actuals coverage below threshold. Resolved {resolved_pct:.1f}% "
+                  f"but required {min_coverage:.1f}%. "
+                  "Run MLB batting game-log refresh again before finalizing actuals."
+              )
+
+          print("V3 actuals load completed and coverage check passed.")
+          PY
