@@ -1,0 +1,277 @@
+name: Run V3 Hit Model
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_date:
+        description: "Optional MLB prediction date in YYYY-MM-DD. Defaults to today's Eastern date."
+        required: false
+        type: string
+
+  # Prefer running V3 only after yesterday's V3 actuals are closed.
+  workflow_run:
+    workflows: ["Load V3 Hit Actuals"]
+    types: [completed]
+
+  schedule:
+    # Backup scheduled run at 12:35 UTC / 8:35 AM EDT.
+    # This should run after Load V3 Hit Actuals.
+    - cron: "35 12 * * *"
+
+jobs:
+  run-v3-hit-model:
+    runs-on: ubuntu-latest
+
+    # If triggered by workflow_run, only run when Load V3 Hit Actuals succeeded.
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      TARGET_DATE: ${{ github.event.inputs.target_date }}
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-v3-ml.txt
+          pip install supabase
+
+      - name: Validate previous V3 actuals are closed
+        run: |
+          python - <<'PY'
+          import os
+          from datetime import datetime, timedelta
+          from zoneinfo import ZoneInfo
+          from supabase import create_client
+
+          supabase = create_client(
+              os.environ["SUPABASE_URL"],
+              os.environ["SUPABASE_SERVICE_ROLE_KEY"],
+          )
+
+          input_date = (os.getenv("TARGET_DATE") or "").strip()
+          target_date = input_date or datetime.now(ZoneInfo("America/New_York")).date().isoformat()
+          previous_date = (
+              datetime.fromisoformat(target_date).date() - timedelta(days=1)
+          ).isoformat()
+
+          print("Checking previous V3 actuals before training.")
+          print(f"Target prediction date: {target_date}")
+          print(f"Previous actuals date: {previous_date}")
+
+          status = (
+              supabase
+              .table("v_mlb_ml_v3_actuals_load_status")
+              .select(
+                  "target_name,prediction_run_date,prediction_rows,"
+                  "actual_loaded_rows,actual_result_rows,ready_to_load_rows,"
+                  "waiting_on_batting_log_rows,pending_data_rows,game_not_loaded_rows,"
+                  "played_rows,did_not_play_rows,availability_rate_pct,last_evaluation_update_at"
+              )
+              .eq("target_name", "hit_1plus")
+              .eq("prediction_run_date", previous_date)
+              .limit(1)
+              .execute()
+          )
+
+          print("Previous V3 actuals status:")
+          print(status.data)
+
+          if not status.data:
+              print(
+                  "No previous-day V3 status row found. This can be normal on the first run "
+                  "or on MLB off days. Continuing."
+              )
+          else:
+              row = status.data[0]
+              prediction_rows = row.get("prediction_rows") or 0
+              actual_loaded_rows = row.get("actual_loaded_rows") or 0
+              ready_to_load_rows = row.get("ready_to_load_rows") or 0
+              waiting_rows = row.get("waiting_on_batting_log_rows") or 0
+              pending_rows = (row.get("pending_data_rows") or 0) + (row.get("game_not_loaded_rows") or 0)
+
+              if prediction_rows > 0 and ready_to_load_rows > 0:
+                  raise RuntimeError(
+                      f"Previous-day V3 actuals are available but not loaded for {previous_date}. "
+                      f"ready_to_load_rows={ready_to_load_rows}. Run Load V3 Hit Actuals before training."
+                  )
+
+              if prediction_rows > 0 and actual_loaded_rows <= 0 and waiting_rows <= 0 and pending_rows <= 0:
+                  raise RuntimeError(
+                      f"Previous-day V3 predictions exist for {previous_date}, but no actuals were loaded. "
+                      "Run Load V3 Hit Actuals before training."
+                  )
+
+          print("Previous V3 actuals preflight passed.")
+          PY
+
+      - name: Validate V3 feature source is current
+        run: |
+          python - <<'PY'
+          import os
+          from datetime import datetime
+          from zoneinfo import ZoneInfo
+          from supabase import create_client
+
+          supabase = create_client(
+              os.environ["SUPABASE_URL"],
+              os.environ["SUPABASE_SERVICE_ROLE_KEY"],
+          )
+
+          input_date = (os.getenv("TARGET_DATE") or "").strip()
+          target_date = input_date or datetime.now(ZoneInfo("America/New_York")).date().isoformat()
+
+          print(f"Expected V3 prediction date: {target_date}")
+
+          today_result = (
+              supabase
+              .table("v_mlb_ml_today_features_v3_wide")
+              .select("prediction_run_date,game_date,game_pk,player_id", count="exact")
+              .eq("prediction_run_date", target_date)
+              .limit(1)
+              .execute()
+          )
+
+          today_count = today_result.count or 0
+          print(f"V3 wide feature rows for {target_date}: {today_count}")
+
+          if today_count <= 0:
+              latest_result = (
+                  supabase
+                  .table("v_mlb_ml_today_features_v3_wide")
+                  .select("prediction_run_date,game_date")
+                  .order("prediction_run_date", desc=True)
+                  .limit(5)
+                  .execute()
+              )
+              print("Latest wide feature dates returned by v_mlb_ml_today_features_v3_wide:")
+              print(latest_result.data)
+
+              raise RuntimeError(
+                  "Stale or missing V3 feature input. "
+                  f"Expected v_mlb_ml_today_features_v3_wide to contain prediction_run_date={target_date}. "
+                  "Run/fix the upstream MLB Phase 1 data refresh before running V3."
+              )
+
+          print("V3 wide feature preflight passed.")
+          PY
+
+      - name: Train and score V3 hit model
+        run: |
+          python scripts/train_score_v3_hit_model.py
+
+      - name: Validate and activate V3 predictions for target date
+        run: |
+          python - <<'PY'
+          import os
+          from datetime import datetime
+          from zoneinfo import ZoneInfo
+          from supabase import create_client
+
+          TARGET_NAME = "hit_1plus"
+
+          supabase = create_client(
+              os.environ["SUPABASE_URL"],
+              os.environ["SUPABASE_SERVICE_ROLE_KEY"],
+          )
+
+          input_date = (os.getenv("TARGET_DATE") or "").strip()
+          target_date = input_date or datetime.now(ZoneInfo("America/New_York")).date().isoformat()
+
+          result = (
+              supabase
+              .table("mlb_ml_predictions_v3")
+              .select("prediction_id,model_run_id,is_active", count="exact")
+              .eq("target_name", TARGET_NAME)
+              .eq("prediction_run_date", target_date)
+              .order("model_run_id", desc=True)
+              .limit(10)
+              .execute()
+          )
+
+          row_count = result.count or 0
+          print(f"V3 prediction rows for {target_date}: {row_count}")
+          print("Sample rows:")
+          print(result.data)
+
+          if row_count <= 0:
+              raise RuntimeError(
+                  f"V3 model completed but no predictions were written for {target_date}."
+              )
+
+          model_run_ids = sorted(
+              {
+                  row.get("model_run_id")
+                  for row in (result.data or [])
+                  if row.get("model_run_id") is not None
+              },
+              reverse=True,
+          )
+
+          if not model_run_ids:
+              raise RuntimeError(
+                  f"V3 predictions were written for {target_date}, but no model_run_id was returned."
+              )
+
+          model_run_id = model_run_ids[0]
+          print(f"Activating official V3 model_run_id={model_run_id} for {target_date}.")
+
+          activation = (
+              supabase
+              .rpc(
+                  "activate_mlb_ml_predictions_v3_run",
+                  {
+                      "p_prediction_run_date": target_date,
+                      "p_target_name": TARGET_NAME,
+                      "p_model_run_id": model_run_id,
+                  },
+              )
+              .execute()
+          )
+          print("Activation RPC result:")
+          print(activation.data)
+
+          active_check = (
+              supabase
+              .table("mlb_ml_predictions_v3")
+              .select("prediction_id,model_run_id", count="exact")
+              .eq("target_name", TARGET_NAME)
+              .eq("prediction_run_date", target_date)
+              .eq("model_run_id", model_run_id)
+              .eq("is_active", True)
+              .limit(5)
+              .execute()
+          )
+
+          active_count = active_check.count or 0
+          print(f"Active V3 rows for {target_date}, model_run_id={model_run_id}: {active_count}")
+          print("Active sample rows:")
+          print(active_check.data)
+
+          if active_count <= 0:
+              raise RuntimeError(
+                  f"V3 activation failed for {target_date}, model_run_id={model_run_id}."
+              )
+
+          activated_rows = activation.data or 0
+          if isinstance(activated_rows, list) and activated_rows:
+              activated_rows = activated_rows[0]
+
+          print(f"Rows activated by RPC: {activated_rows}")
+          if activated_rows and active_count != activated_rows:
+              raise RuntimeError(
+                  f"V3 activation count mismatch for {target_date}, model_run_id={model_run_id}. "
+                  f"RPC activated {activated_rows}, but active check found {active_count}."
+              )
+
+          print("V3 prediction write validation and activation passed.")
+          PY
