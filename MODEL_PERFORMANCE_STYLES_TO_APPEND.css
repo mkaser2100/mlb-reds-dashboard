@@ -1,0 +1,110 @@
+
+
+/* =========================================================
+   Model Performance Redesign - merged into styles.css
+   ========================================================= */
+
+/* Model Performance Redesign */
+
+.model-performance-control-deck {
+  align-items: flex-end;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.performance-source-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0 0 18px;
+}
+
+.performance-source-card {
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 16px;
+  background: rgba(15, 23, 42, 0.55);
+  padding: 14px;
+}
+
+.performance-source-card span,
+.performance-source-card small {
+  display: block;
+  color: #94a3b8;
+}
+
+.performance-source-card strong {
+  display: block;
+  margin: 4px 0;
+}
+
+.performance-source-card.ok strong {
+  color: #86efac;
+}
+
+.performance-source-card.warn strong {
+  color: #fbbf24;
+}
+
+.performance-winner {
+  font-weight: 800;
+  color: #86efac;
+}
+
+.performance-bucket-cell {
+  min-width: 150px;
+}
+
+.performance-bucket-cell strong,
+.performance-bucket-cell span,
+.performance-bucket-cell small {
+  display: block;
+}
+
+.performance-bucket-cell span,
+.performance-bucket-cell small {
+  color: #94a3b8;
+}
+
+.performance-bucket-cell.muted {
+  color: #64748b;
+}
+
+.performance-signal-track {
+  position: relative;
+  overflow: hidden;
+  height: 10px;
+  min-width: 120px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.22);
+}
+
+.performance-signal-bar {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: rgba(34, 197, 94, 0.9);
+}
+
+.performance-signal-bar.negative {
+  background: rgba(248, 113, 113, 0.9);
+}
+
+.wide-performance-table {
+  min-width: 940px;
+}
+
+@media (max-width: 900px) {
+  .performance-source-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .model-performance-control-deck {
+    align-items: stretch;
+  }
+}
+
+@media (max-width: 640px) {
+  .performance-source-grid {
+    grid-template-columns: 1fr;
+  }
+}
