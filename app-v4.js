@@ -4218,7 +4218,7 @@ function renderPerformancePage() {
               <th class="num">Top 10</th>
               <th class="num">Top 20</th>
               <th class="num">Top 25</th>
-              <th class="num">Overall</th>
+              <th class="num">Baseline</th>
             </tr>
           </thead>
           <tbody>${mpRenderScorecardRows()}</tbody>
