@@ -1,0 +1,156 @@
+name: Refresh MLB Hit Board Performance
+
+on:
+  workflow_dispatch:
+    inputs:
+      days_back:
+        description: "Number of historical days to refresh"
+        required: false
+        default: "3"
+
+  # Primary dependency-driven run: refresh performance after V3 model completes.
+  workflow_run:
+    workflows: ["Run V3 Hit Model"]
+    types: [completed]
+
+  schedule:
+    # Backup run. GitHub cron runs in UTC.
+    # During daylight savings time: 12:50 UTC = 8:50 AM ET.
+    - cron: "50 12 * * *"
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: refresh-mlb-hit-board-performance
+  cancel-in-progress: false
+
+jobs:
+
+  once-daily-gate:
+    runs-on: ubuntu-latest
+    outputs:
+      should_run: ${{ steps.gate.outputs.should_run }}
+
+    steps:
+      - name: Enforce one automatic run per Eastern day
+        id: gate
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const automaticEvents = new Set(["schedule", "workflow_run"]);
+
+            // Manual runs are always allowed, including intentional same-day reruns.
+            if (!automaticEvents.has(context.eventName)) {
+              core.info(`Event ${context.eventName} is not automatic; allowing run.`);
+              core.setOutput("should_run", "true");
+              return;
+            }
+
+            const easternDate = (value) => {
+              const parts = new Intl.DateTimeFormat("en-US", {
+                timeZone: "America/New_York",
+                year: "numeric",
+                month: "2-digit",
+                day: "2-digit",
+              }).formatToParts(new Date(value));
+
+              const values = Object.fromEntries(
+                parts
+                  .filter((part) => part.type !== "literal")
+                  .map((part) => [part.type, part.value])
+              );
+
+              return `${values.year}-${values.month}-${values.day}`;
+            };
+
+            const todayEastern = easternDate(new Date());
+            core.info(`Current Eastern date: ${todayEastern}`);
+
+            const workflowPrefix = `${context.repo.owner}/${context.repo.repo}/`;
+            const workflowId = process.env.GITHUB_WORKFLOW_REF
+              .split("@")[0]
+              .replace(workflowPrefix, "");
+
+            core.info(`Checking workflow history for ${workflowId}.`);
+
+            const runs = await github.paginate(
+              github.rest.actions.listWorkflowRuns,
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: workflowId,
+                per_page: 100,
+              }
+            );
+
+            const priorSuccessfulAutomaticRun = runs.find((run) => {
+              if (run.id === context.runId) return false;
+              if (!automaticEvents.has(run.event)) return false;
+              if (run.conclusion !== "success") return false;
+              return easternDate(run.created_at) === todayEastern;
+            });
+
+            if (priorSuccessfulAutomaticRun) {
+              core.info(
+                `Skipping duplicate automatic run. Prior successful run ` +
+                `${priorSuccessfulAutomaticRun.id} was created at ` +
+                `${priorSuccessfulAutomaticRun.created_at}.`
+              );
+              core.setOutput("should_run", "false");
+              return;
+            }
+
+            core.info("No prior successful automatic run found for today; allowing run.");
+            core.setOutput("should_run", "true");
+
+  refresh-mlb-hit-board-performance:
+    needs: once-daily-gate
+    runs-on: ubuntu-latest
+
+    # Run only when the once-daily gate allows it and the dependency succeeded.
+    if: ${{ needs.once-daily-gate.outputs.should_run == 'true' && (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success') }}
+
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+
+    steps:
+      - name: Show schedule context
+        run: |
+          echo "event_name=${{ github.event_name }}"
+          echo "schedule=${{ github.event.schedule }}"
+          echo "utc_now=$(date -u)"
+          echo "et_now=$(TZ=America/New_York date)"
+          echo "sha=${{ github.sha }}"
+
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install supabase
+
+      - name: Snapshot MLB Hit Board predictions
+        run: |
+          python scripts/track_mlb_hit_board_performance.py --mode snapshot
+
+      - name: Update MLB Hit Board actuals
+        run: |
+          python scripts/track_mlb_hit_board_performance.py --mode actuals
+
+      - name: Refresh incremental MLB Hit Board performance
+        run: |
+          DAYS_BACK="${{ github.event.inputs.days_back }}"
+          if [ -z "$DAYS_BACK" ]; then
+            DAYS_BACK="3"
+          fi
+          python scripts/refresh_mlb_hit_board_performance.py --days-back "$DAYS_BACK"
