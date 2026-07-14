@@ -1,0 +1,137 @@
+name: Load All MLB Phase 1 Data
+
+on:
+  workflow_dispatch:
+    inputs:
+      date:
+        description: "Date to load, YYYY-MM-DD. Leave blank for runner current date."
+        required: false
+        default: ""
+      days_back:
+        description: "Recent game-log lookback days"
+        required: false
+        default: "7"
+      skip_splits:
+        description: "Skip hitter split loading for faster test run"
+        required: false
+        default: "false"
+  schedule:
+    # GitHub cron runs in UTC.
+    # During daylight savings time: 07:15 UTC = 3:15 AM ET.
+    - cron: "15 7 * * *"
+
+jobs:
+  load-all-mlb-phase-1:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+
+    steps:
+      - name: Show schedule context
+        run: |
+          echo "event_name=${{ github.event_name }}"
+          echo "schedule=${{ github.event.schedule }}"
+          echo "utc_now=$(date -u)"
+          echo "et_now=$(TZ=America/New_York date)"
+          echo "sha=${{ github.sha }}"
+
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install supabase
+
+      - name: Load all MLB phase 1 data
+        run: |
+          DATE_INPUT="${{ github.event.inputs.date }}"
+          DAYS_BACK="${{ github.event.inputs.days_back || '7' }}"
+          SKIP_SPLITS="${{ github.event.inputs.skip_splits || 'false' }}"
+
+          CMD="python scripts/load_all_mlb_phase1.py --days-back ${DAYS_BACK}"
+          if [ -n "$DATE_INPUT" ]; then
+            CMD="$CMD --date $DATE_INPUT"
+          fi
+          if [ "$SKIP_SPLITS" = "true" ]; then
+            CMD="$CMD --skip-splits"
+          fi
+          echo "$CMD"
+          eval "$CMD"
+
+      - name: Snapshot V2 predictions for V3 feature source
+        run: |
+          python - <<'PY'
+          import os
+          from datetime import datetime
+          from zoneinfo import ZoneInfo
+
+          from supabase import create_client
+
+          supabase = create_client(
+              os.environ["SUPABASE_URL"],
+              os.environ["SUPABASE_SERVICE_ROLE_KEY"],
+          )
+
+          target_date = "${{ github.event.inputs.date }}".strip()
+          if not target_date:
+              target_date = datetime.now(ZoneInfo("America/New_York")).date().isoformat()
+
+          print(f"Snapshotting V2 predictions for expected date: {target_date}")
+
+          result = (
+              supabase
+              .rpc(
+                  "snapshot_mlb_hit_board_predictions_v2_status",
+                  {"p_target_date": target_date},
+              )
+              .execute()
+          )
+
+          payload = result.data or {}
+          if isinstance(payload, list):
+              payload = payload[0] if payload else {}
+
+          print("snapshot_mlb_hit_board_predictions_v2_status result:")
+          print(payload)
+
+          snapshot_status = payload.get("status")
+          eligible_game_count = int(payload.get("eligible_game_count") or 0)
+          source_feature_rows = int(payload.get("source_feature_rows") or 0)
+          saved_prediction_rows = int(payload.get("saved_prediction_rows") or 0)
+
+          if snapshot_status == "no_eligible_games":
+              print(
+                  f"No prediction-eligible MLB games for {target_date}. "
+                  "The V2 snapshot and V3 feature-source validation completed "
+                  "successfully with no work."
+              )
+          elif snapshot_status != "complete":
+              raise RuntimeError(
+                  f"V2 snapshot did not complete for {target_date}. "
+                  f"Structured status: {payload}"
+              )
+          elif (
+              eligible_game_count <= 0
+              or source_feature_rows <= 0
+              or saved_prediction_rows <= 0
+          ):
+              raise RuntimeError(
+                  f"V2 snapshot returned complete for {target_date}, but its row "
+                  f"counts are not valid. Structured status: {payload}"
+              )
+          else:
+              print(
+                  f"V2 snapshot complete for {target_date}: "
+                  f"eligible_game_count={eligible_game_count}, "
+                  f"source_feature_rows={source_feature_rows}, "
+                  f"saved_prediction_rows={saved_prediction_rows}"
+              )
+          PY
