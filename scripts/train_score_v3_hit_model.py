@@ -115,7 +115,7 @@ def get_config() -> Config:
     )
 
 
-def fetch_all_rows(client: Any, table_or_view: str, page_size: int = 1000) -> pd.DataFrame:
+def fetch_all_rows(client: Any, table_or_view: str, page_size: int = 5000) -> pd.DataFrame:
     rows: list[dict[str, Any]] = []
     start = 0
     while True:
