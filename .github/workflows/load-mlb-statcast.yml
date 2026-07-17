@@ -1,0 +1,120 @@
+name: Load MLB Statcast
+
+on:
+  workflow_dispatch:
+    inputs:
+      start_date:
+        description: "Inclusive source date in YYYY-MM-DD. Blank defaults to yesterday ET."
+        required: false
+        type: string
+      end_date:
+        description: "Inclusive source date in YYYY-MM-DD. Blank defaults to yesterday ET."
+        required: false
+        type: string
+      refresh_game_date:
+        description: "Prediction date to refresh in YYYY-MM-DD. Blank defaults to today ET."
+        required: false
+        type: string
+      refresh_mode:
+        description: "Feature refresh behavior."
+        required: true
+        default: "latest"
+        type: choice
+        options:
+          - latest
+          - all
+          - none
+      dry_run:
+        description: "Fetch and transform without writing to Supabase."
+        required: true
+        default: false
+        type: boolean
+
+  schedule:
+    # 10:45 UTC = 6:45 AM EDT / 5:45 AM EST.
+    - cron: "45 10 * * *"
+
+concurrency:
+  group: load-mlb-statcast-${{ github.event_name }}-${{ inputs.start_date || 'daily' }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  load-statcast:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      PYTHONUNBUFFERED: "1"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: requirements-statcast.txt
+
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip && pip install -r requirements-statcast.txt
+
+      - name: Build loader arguments
+        id: args
+        shell: bash
+        env:
+          INPUT_START_DATE: ${{ inputs.start_date }}
+          INPUT_END_DATE: ${{ inputs.end_date }}
+          INPUT_REFRESH_GAME_DATE: ${{ inputs.refresh_game_date }}
+          INPUT_REFRESH_MODE: ${{ inputs.refresh_mode }}
+          INPUT_DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          ARGS=()
+
+          if [[ -n "${INPUT_START_DATE:-}" ]]; then
+            ARGS+=(--start-date "$INPUT_START_DATE")
+          fi
+          if [[ -n "${INPUT_END_DATE:-}" ]]; then
+            ARGS+=(--end-date "$INPUT_END_DATE")
+          fi
+          if [[ -n "${INPUT_REFRESH_GAME_DATE:-}" ]]; then
+            ARGS+=(--refresh-game-date "$INPUT_REFRESH_GAME_DATE")
+          fi
+
+          ARGS+=(--refresh-mode "${INPUT_REFRESH_MODE:-latest}")
+
+          if [[ "${INPUT_DRY_RUN:-false}" == "true" ]]; then
+            ARGS+=(--dry-run)
+          fi
+
+          # Scheduled runs may follow an MLB-wide off day.
+          if [[ "${{ github.event_name }}" == "schedule" ]]; then
+            ARGS+=(--continue-on-empty)
+          fi
+
+          printf 'args=' >> "$GITHUB_OUTPUT"
+          printf '%q ' "${ARGS[@]}" >> "$GITHUB_OUTPUT"
+          printf '\n' >> "$GITHUB_OUTPUT"
+
+      - name: Load Statcast events
+        run: python scripts/load_mlb_statcast.py ${{ steps.args.outputs.args }}
+
+      - name: Write job summary
+        if: always()
+        run: |
+          {
+            echo "## MLB Statcast Loader"
+            echo
+            echo "- Trigger: \`${{ github.event_name }}\`"
+            echo "- Start date: \`${{ inputs.start_date || 'yesterday ET' }}\`"
+            echo "- End date: \`${{ inputs.end_date || 'yesterday ET' }}\`"
+            echo "- Refresh date: \`${{ inputs.refresh_game_date || 'today ET' }}\`"
+            echo "- Refresh mode: \`${{ inputs.refresh_mode || 'latest' }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
