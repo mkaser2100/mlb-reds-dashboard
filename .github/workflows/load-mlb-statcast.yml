@@ -11,19 +11,6 @@ on:
         description: "Inclusive source date in YYYY-MM-DD. Blank defaults to yesterday ET."
         required: false
         type: string
-      refresh_game_date:
-        description: "Prediction date to refresh in YYYY-MM-DD. Blank defaults to today ET."
-        required: false
-        type: string
-      refresh_mode:
-        description: "Feature refresh behavior."
-        required: true
-        default: "latest"
-        type: choice
-        options:
-          - latest
-          - all
-          - none
       dry_run:
         description: "Fetch and transform without writing to Supabase."
         required: true
@@ -71,12 +58,10 @@ jobs:
         env:
           INPUT_START_DATE: ${{ inputs.start_date }}
           INPUT_END_DATE: ${{ inputs.end_date }}
-          INPUT_REFRESH_GAME_DATE: ${{ inputs.refresh_game_date }}
-          INPUT_REFRESH_MODE: ${{ inputs.refresh_mode }}
           INPUT_DRY_RUN: ${{ inputs.dry_run }}
         run: |
           set -euo pipefail
-          ARGS=()
+          ARGS=(--refresh-mode none)
 
           if [[ -n "${INPUT_START_DATE:-}" ]]; then
             ARGS+=(--start-date "$INPUT_START_DATE")
@@ -84,11 +69,6 @@ jobs:
           if [[ -n "${INPUT_END_DATE:-}" ]]; then
             ARGS+=(--end-date "$INPUT_END_DATE")
           fi
-          if [[ -n "${INPUT_REFRESH_GAME_DATE:-}" ]]; then
-            ARGS+=(--refresh-game-date "$INPUT_REFRESH_GAME_DATE")
-          fi
-
-          ARGS+=(--refresh-mode "${INPUT_REFRESH_MODE:-latest}")
 
           if [[ "${INPUT_DRY_RUN:-false}" == "true" ]]; then
             ARGS+=(--dry-run)
@@ -115,6 +95,5 @@ jobs:
             echo "- Trigger: \`${{ github.event_name }}\`"
             echo "- Start date: \`${{ inputs.start_date || 'yesterday ET' }}\`"
             echo "- End date: \`${{ inputs.end_date || 'yesterday ET' }}\`"
-            echo "- Refresh date: \`${{ inputs.refresh_game_date || 'today ET' }}\`"
-            echo "- Refresh mode: \`${{ inputs.refresh_mode || 'latest' }}\`"
+            echo "- Feature refresh: \`handled by Refresh MLB V3 Features workflow\`"
           } >> "$GITHUB_STEP_SUMMARY"
