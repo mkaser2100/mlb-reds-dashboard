@@ -21,6 +21,7 @@ EASTERN = ZoneInfo("America/New_York")
 DEFAULT_BATCH_SIZE = 2000
 MAX_EDGE_BATCH_SIZE = 5000
 REQUEST_TIMEOUT_SECONDS = 120
+FEATURE_REFRESH_TIMEOUT_SECONDS = 600
 
 SWING_DESCRIPTIONS = {
     "swinging_strike", "swinging_strike_blocked", "foul", "foul_bunt",
@@ -223,13 +224,19 @@ def transform_frame(frame: pd.DataFrame) -> tuple[list[dict[str, Any]], int]:
     return list(deduped.values()), skipped + len(rows) - len(deduped)
 
 
-def request_with_retries(session: requests.Session, url: str, headers: dict[str, str],
-                         body: dict[str, Any], attempts: int = 4) -> requests.Response:
+def request_with_retries(
+    session: requests.Session,
+    url: str,
+    headers: dict[str, str],
+    body: dict[str, Any],
+    attempts: int = 4,
+    timeout_seconds: int = REQUEST_TIMEOUT_SECONDS,
+) -> requests.Response:
     last_error: Exception | None = None
     for attempt in range(1, attempts + 1):
         try:
             response = session.post(url, headers=headers, json=body,
-                                    timeout=REQUEST_TIMEOUT_SECONDS)
+                                    timeout=timeout_seconds)
             if response.status_code < 500 and response.status_code != 429:
                 return response
             response.raise_for_status()
@@ -274,9 +281,13 @@ def refresh_features(session: requests.Session, config: Config, game_date: date)
         print(f"Dry run: would refresh enhancement features for {game_date}.")
         return
     endpoint = f"{config.supabase_url}/rest/v1/rpc/refresh_mlb_v3_enhancement_features"
-    response = request_with_retries(session, endpoint,
+    response = request_with_retries(
+        session,
+        endpoint,
         {**auth_headers(config), "Prefer": "return=representation"},
-        {"p_game_date": game_date.isoformat()})
+        {"p_game_date": game_date.isoformat()},
+        timeout_seconds=FEATURE_REFRESH_TIMEOUT_SECONDS,
+    )
     if not response.ok:
         raise RuntimeError(f"Feature refresh failed ({response.status_code}): {response.text}")
     print(f"Feature refresh {game_date}: {json.dumps(response.json(), default=str)}")
@@ -400,14 +411,28 @@ def run(config: Config) -> None:
     elif config.refresh_mode == "latest" and config.refresh_game_date:
         refresh_dates.add(config.refresh_game_date)
 
+    refreshed_dates: set[date] = set()
+    failed_refreshes: dict[str, str] = {}
     for refresh_date in sorted(refresh_dates):
-        refresh_features(session, config, refresh_date)
+        try:
+            refresh_features(session, config, refresh_date)
+            refreshed_dates.add(refresh_date)
+        except Exception as exc:
+            failed_refreshes[refresh_date.isoformat()] = str(exc)
+            print(
+                f"WARNING: feature refresh failed for {refresh_date}: {exc}. "
+                "Statcast ingestion remains complete; refresh can be retried separately.",
+                file=sys.stderr,
+            )
 
-    print(json.dumps({"status": "complete", **totals,
+    status = "complete_with_refresh_warnings" if failed_refreshes else "complete"
+    print(json.dumps({"status": status, **totals,
         "source_start_date": config.start_date.isoformat(),
         "source_end_date": config.end_date.isoformat(),
         "loaded_game_dates": sorted(d.isoformat() for d in loaded_dates),
-        "refreshed_game_dates": sorted(d.isoformat() for d in refresh_dates),
+        "requested_refresh_game_dates": sorted(d.isoformat() for d in refresh_dates),
+        "refreshed_game_dates": sorted(d.isoformat() for d in refreshed_dates),
+        "failed_refreshes": failed_refreshes,
         "dry_run": config.dry_run}, indent=2))
 
 
