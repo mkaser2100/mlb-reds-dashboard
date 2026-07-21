@@ -1,0 +1,72 @@
+name: Refresh MLB V3 Features
+
+on:
+  workflow_dispatch:
+    inputs:
+      game_date:
+        description: "Prediction date to refresh in YYYY-MM-DD. Blank defaults to today ET."
+        required: false
+        type: string
+
+  workflow_run:
+    workflows: ["Load MLB Statcast"]
+    types: [completed]
+
+  schedule:
+    # Backup run after the scheduled Statcast load.
+    # 12:15 UTC = 8:15 AM EDT / 7:15 AM EST.
+    - cron: "15 12 * * *"
+
+concurrency:
+  group: refresh-mlb-v3-features-${{ inputs.game_date || 'today' }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  refresh-features:
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      PYTHONUNBUFFERED: "1"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install refresh dependency
+        run: python -m pip install --upgrade pip requests
+
+      - name: Refresh V3 enhancement features
+        shell: bash
+        env:
+          INPUT_GAME_DATE: ${{ inputs.game_date }}
+        run: |
+          set -euo pipefail
+
+          if [[ -n "${INPUT_GAME_DATE:-}" ]]; then
+            python scripts/refresh_mlb_v3_features.py --game-date "$INPUT_GAME_DATE"
+          else
+            python scripts/refresh_mlb_v3_features.py
+          fi
+
+      - name: Write job summary
+        if: always()
+        run: |
+          {
+            echo "## MLB V3 Feature Refresh"
+            echo
+            echo "- Trigger: \`${{ github.event_name }}\`"
+            echo "- Game date: \`${{ inputs.game_date || 'today ET' }}\`"
+            echo "- RPC timeout: \`600 seconds\`"
+          } >> "$GITHUB_STEP_SUMMARY"
