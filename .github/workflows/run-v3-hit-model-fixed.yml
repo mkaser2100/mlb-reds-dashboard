@@ -1,0 +1,621 @@
+name: Run V3 Hit Model
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_date:
+        description: "Optional MLB prediction date in YYYY-MM-DD. Defaults to today's Eastern date."
+        required: false
+        type: string
+
+  # Run V3 only after today's Statcast enhancement features finish refreshing.
+  workflow_run:
+    workflows: ["Refresh MLB V3 Features"]
+    types: [completed]
+
+  schedule:
+    # Backup scheduled run at 12:45 UTC / 8:45 AM EDT.
+    # This provides extra buffer after the Statcast and V3 feature refresh workflows.
+    - cron: "45 12 * * *"
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: run-v3-hit-model
+  cancel-in-progress: false
+
+jobs:
+
+  once-daily-gate:
+    runs-on: ubuntu-latest
+    outputs:
+      should_run: ${{ steps.gate.outputs.should_run }}
+
+    steps:
+      - name: Enforce one automatic run per Eastern day
+        id: gate
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const automaticEvents = new Set(["schedule", "workflow_run"]);
+
+            // Manual runs are always allowed, including intentional same-day reruns.
+            if (!automaticEvents.has(context.eventName)) {
+              core.info(`Event ${context.eventName} is not automatic; allowing run.`);
+              core.setOutput("should_run", "true");
+              return;
+            }
+
+            const easternDate = (value) => {
+              const parts = new Intl.DateTimeFormat("en-US", {
+                timeZone: "America/New_York",
+                year: "numeric",
+                month: "2-digit",
+                day: "2-digit",
+              }).formatToParts(new Date(value));
+
+              const values = Object.fromEntries(
+                parts
+                  .filter((part) => part.type !== "literal")
+                  .map((part) => [part.type, part.value])
+              );
+
+              return `${values.year}-${values.month}-${values.day}`;
+            };
+
+            const todayEastern = easternDate(new Date());
+            core.info(`Current Eastern date: ${todayEastern}`);
+
+            const workflowPrefix = `${context.repo.owner}/${context.repo.repo}/`;
+            const workflowId = process.env.GITHUB_WORKFLOW_REF
+              .split("@")[0]
+              .replace(workflowPrefix, "");
+
+            core.info(`Checking workflow history for ${workflowId}.`);
+
+            const runs = await github.paginate(
+              github.rest.actions.listWorkflowRuns,
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: workflowId,
+                per_page: 100,
+              }
+            );
+
+            const priorSuccessfulAutomaticRun = runs.find((run) => {
+              if (run.id === context.runId) return false;
+              if (!automaticEvents.has(run.event)) return false;
+              if (run.conclusion !== "success") return false;
+              return easternDate(run.created_at) === todayEastern;
+            });
+
+            if (priorSuccessfulAutomaticRun) {
+              core.info(
+                `Skipping duplicate automatic run. Prior successful run ` +
+                `${priorSuccessfulAutomaticRun.id} was created at ` +
+                `${priorSuccessfulAutomaticRun.created_at}.`
+              );
+              core.setOutput("should_run", "false");
+              return;
+            }
+
+            core.info("No prior successful automatic run found for today; allowing run.");
+            core.setOutput("should_run", "true");
+
+  run-v3-hit-model:
+    needs: once-daily-gate
+    runs-on: ubuntu-latest
+
+    # Run only when the once-daily gate allows it and the dependency succeeded.
+    if: ${{ needs.once-daily-gate.outputs.should_run == 'true' && (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success') }}
+
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      TARGET_DATE: ${{ github.event.inputs.target_date }}
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-v3-ml.txt
+          pip install supabase
+
+      - name: Validate previous V3 actuals are closed
+        run: |
+          python - <<'PY'
+          import os
+          import time
+          from datetime import datetime, timedelta
+          from zoneinfo import ZoneInfo
+
+          from supabase import create_client
+
+          TRANSIENT_SUPABASE_MARKERS = (
+              "'code': 522",
+              '"code": 522',
+              "Connection timed out",
+              "JSON could not be generated",
+              "<!DOCTYPE html>",
+              "cloudflare",
+              "Error code 522",
+              "timed out",
+              "Connection terminated",
+          )
+
+          TARGET_NAME = "hit_1plus"
+
+          def is_transient_supabase_error(exc):
+              message = str(exc).lower()
+              return any(marker.lower() in message for marker in TRANSIENT_SUPABASE_MARKERS)
+
+          def execute_with_retry(query_factory, attempts=5, first_delay_seconds=3):
+              delay = first_delay_seconds
+
+              for attempt in range(1, attempts + 1):
+                  try:
+                      return query_factory().execute()
+                  except Exception as exc:
+                      transient = is_transient_supabase_error(exc)
+
+                      if not transient or attempt == attempts:
+                          raise
+
+                      print(
+                          f"Transient Supabase/PostgREST error on attempt "
+                          f"{attempt}/{attempts}: {exc}"
+                      )
+                      print(f"Retrying in {delay}s...")
+                      time.sleep(delay)
+                      delay *= 2
+
+          def is_true(value):
+              return value is True or str(value).lower() == "true"
+
+          supabase = create_client(
+              os.environ["SUPABASE_URL"],
+              os.environ["SUPABASE_SERVICE_ROLE_KEY"],
+          )
+
+          input_date = (os.getenv("TARGET_DATE") or "").strip()
+          target_date = input_date or datetime.now(ZoneInfo("America/New_York")).date().isoformat()
+          previous_date = (
+              datetime.fromisoformat(target_date).date() - timedelta(days=1)
+          ).isoformat()
+
+          # Default fail-open for transient 522s. This prevents a Supabase/Cloudflare
+          # timeout from blocking a same-day V3 rerun. Set this repo/env var to true
+          # later if you want the workflow to fail closed.
+          strict_previous_actuals_check = (
+              os.getenv("STRICT_PREVIOUS_ACTUALS_CHECK", "false").lower() == "true"
+          )
+
+          print("Checking previous V3 actuals before training.")
+          print(f"Target prediction date: {target_date}")
+          print(f"Previous actuals date: {previous_date}")
+
+          def previous_predictions_query():
+              # Do NOT query v_mlb_ml_v3_actuals_load_status here.
+              # That view can become expensive because it may traverse active/ranked
+              # presentation views. This preflight only needs the base active
+              # prediction rows for one target/date.
+              return (
+                  supabase
+                  .table("mlb_ml_predictions_v3")
+                  .select(
+                      "prediction_id,actual_loaded,actual_value,actual_binary,"
+                      "evaluation_status,evaluation_updated_at",
+                      count="exact",
+                  )
+                  .eq("target_name", TARGET_NAME)
+                  .eq("prediction_run_date", previous_date)
+                  .eq("is_active", True)
+                  .limit(1000)
+              )
+
+          try:
+              status = execute_with_retry(previous_predictions_query)
+          except Exception as exc:
+              if strict_previous_actuals_check or not is_transient_supabase_error(exc):
+                  raise
+
+              print(
+                  "WARNING: Previous V3 actuals preflight hit repeated transient "
+                  "Supabase/Cloudflare 522 timeouts. Continuing because "
+                  "STRICT_PREVIOUS_ACTUALS_CHECK is false."
+              )
+              print(f"Last transient error: {exc}")
+          else:
+              rows = status.data or []
+              prediction_rows = status.count if status.count is not None else len(rows)
+
+              print("Previous V3 actuals base-table status:")
+              print(f"prediction_rows={prediction_rows}")
+              print(f"sample_rows={rows[:5]}")
+
+              if prediction_rows <= 0:
+                  print(
+                      "No previous-day active V3 prediction rows found. This can be normal "
+                      "on the first run or on MLB off days. Continuing."
+                  )
+              else:
+                  actual_loaded_rows = sum(1 for row in rows if is_true(row.get("actual_loaded")))
+                  actual_result_rows = sum(
+                      1
+                      for row in rows
+                      if row.get("actual_value") is not None
+                      or row.get("actual_binary") is not None
+                  )
+                  played_rows = sum(1 for row in rows if row.get("evaluation_status") == "played")
+                  did_not_play_rows = sum(
+                      1 for row in rows if row.get("evaluation_status") == "did_not_play"
+                  )
+                  pending_rows = sum(
+                      1
+                      for row in rows
+                      if row.get("evaluation_status") in ("pending_data", "game_not_loaded")
+                  )
+                  unknown_rows = max(
+                      0,
+                      prediction_rows - actual_loaded_rows - pending_rows - did_not_play_rows,
+                  )
+
+                  print(
+                      "Previous V3 actuals status: "
+                      f"prediction_rows={prediction_rows}, "
+                      f"actual_loaded_rows={actual_loaded_rows}, "
+                      f"actual_result_rows={actual_result_rows}, "
+                      f"played_rows={played_rows}, "
+                      f"did_not_play_rows={did_not_play_rows}, "
+                      f"pending_rows={pending_rows}, "
+                      f"unknown_rows={unknown_rows}"
+                  )
+
+                  if (
+                      prediction_rows > 0
+                      and actual_loaded_rows <= 0
+                      and played_rows <= 0
+                      and did_not_play_rows <= 0
+                      and pending_rows <= 0
+                  ):
+                      raise RuntimeError(
+                          f"Previous-day V3 predictions exist for {previous_date}, "
+                          "but no actuals/evaluation statuses were loaded. "
+                          "Run Load V3 Hit Actuals before training."
+                      )
+
+          print("Previous V3 actuals preflight passed.")
+          PY
+
+      - name: Validate V3 feature source is current
+        run: |
+          python - <<'PY'
+          import os
+          import time
+          from datetime import datetime
+          from zoneinfo import ZoneInfo
+
+          from supabase import create_client
+
+          TRANSIENT_SUPABASE_MARKERS = (
+              "'code': 522",
+              '"code": 522',
+              "Connection timed out",
+              "JSON could not be generated",
+              "<!DOCTYPE html>",
+              "cloudflare",
+              "Error code 522",
+              "timed out",
+              "Connection terminated",
+          )
+
+          def is_transient_supabase_error(exc):
+              message = str(exc).lower()
+              return any(marker.lower() in message for marker in TRANSIENT_SUPABASE_MARKERS)
+
+          def execute_with_retry(query_factory, attempts=5, first_delay_seconds=3):
+              delay = first_delay_seconds
+
+              for attempt in range(1, attempts + 1):
+                  try:
+                      return query_factory().execute()
+                  except Exception as exc:
+                      transient = is_transient_supabase_error(exc)
+
+                      if not transient or attempt == attempts:
+                          raise
+
+                      print(
+                          f"Transient Supabase/PostgREST error on attempt "
+                          f"{attempt}/{attempts}: {exc}"
+                      )
+                      print(f"Retrying in {delay}s...")
+                      time.sleep(delay)
+                      delay *= 2
+
+          supabase = create_client(
+              os.environ["SUPABASE_URL"],
+              os.environ["SUPABASE_SERVICE_ROLE_KEY"],
+          )
+
+          input_date = (os.getenv("TARGET_DATE") or "").strip()
+          target_date = input_date or datetime.now(
+              ZoneInfo("America/New_York")
+          ).date().isoformat()
+
+          print(f"Expected V3 prediction date: {target_date}")
+
+          def current_feature_query():
+              # This is an existence check, not a row-count report.
+              # Avoid count="exact" here because PostgREST would count every row
+              # produced by the wide feature view before returning one row.
+              return (
+                  supabase
+                  .table("v_mlb_ml_today_features_v3_wide")
+                  .select("prediction_run_date,game_date,game_pk,player_id")
+                  .eq("prediction_run_date", target_date)
+                  .limit(1)
+              )
+
+          try:
+              today_result = execute_with_retry(current_feature_query)
+          except Exception as exc:
+              if is_transient_supabase_error(exc):
+                  raise RuntimeError(
+                      "Supabase repeatedly timed out while checking the V3 feature "
+                      f"source for {target_date}. The workflow retried five times. "
+                      "This is an infrastructure/query-availability failure, not a "
+                      "stale-feature result."
+                  ) from exc
+              raise
+
+          today_rows = today_result.data or []
+          print(f"V3 wide feature existence rows for {target_date}: {len(today_rows)}")
+          print(f"Feature sample: {today_rows[:1]}")
+
+          if not today_rows:
+              def pipeline_status_query():
+                  return supabase.rpc(
+                      "get_mlb_daily_prediction_pipeline_status",
+                      {"p_game_date": target_date},
+                  )
+
+              try:
+                  pipeline_result = execute_with_retry(pipeline_status_query)
+                  pipeline_payload = pipeline_result.data or {}
+              except Exception as exc:
+                  if is_transient_supabase_error(exc):
+                      raise RuntimeError(
+                          "Supabase repeatedly timed out while checking prediction "
+                          f"eligibility for {target_date}."
+                      ) from exc
+                  raise
+
+              if isinstance(pipeline_payload, list):
+                  pipeline_payload = pipeline_payload[0] if pipeline_payload else {}
+
+              print("Daily prediction pipeline status:")
+              print(pipeline_payload)
+
+              if pipeline_payload.get("pipeline_status") == "no_eligible_games":
+                  with open(
+                      os.environ["GITHUB_ENV"],
+                      "a",
+                      encoding="utf-8",
+                  ) as env_file:
+                      env_file.write("SKIP_V3_MODEL=true\n")
+
+                  print(
+                      f"No prediction-eligible MLB games for {target_date}. "
+                      "Skipping V3 training, scoring, validation, activation, "
+                      "and drawer explanation refresh."
+                  )
+                  raise SystemExit(0)
+
+              def latest_feature_dates_query():
+                  return (
+                      supabase
+                      .table("v_mlb_ml_today_features_v3_wide")
+                      .select("prediction_run_date,game_date")
+                      .order("prediction_run_date", desc=True)
+                      .limit(5)
+                  )
+
+              try:
+                  latest_result = execute_with_retry(latest_feature_dates_query)
+                  latest_rows = latest_result.data or []
+              except Exception as exc:
+                  if is_transient_supabase_error(exc):
+                      latest_rows = []
+                      print(
+                          "WARNING: Supabase also timed out while retrieving the "
+                          "latest available V3 feature dates."
+                      )
+                  else:
+                      raise
+
+              print(
+                  "Latest wide feature dates returned by "
+                  "v_mlb_ml_today_features_v3_wide:"
+              )
+              print(latest_rows)
+
+              raise RuntimeError(
+                  "Stale or missing V3 feature input. "
+                  f"Expected v_mlb_ml_today_features_v3_wide to contain "
+                  f"prediction_run_date={target_date}. "
+                  f"Pipeline status: {pipeline_payload}. "
+                  "Run/fix the upstream MLB Phase 1 data refresh before running V3."
+              )
+
+          print("V3 wide feature preflight passed.")
+          PY
+
+      - name: Train and score V3 hit model
+        if: env.SKIP_V3_MODEL != 'true'
+        run: |
+          python scripts/train_score_v3_hit_model.py
+
+      - name: Validate and activate V3 predictions for target date
+        if: env.SKIP_V3_MODEL != 'true'
+        run: |
+          python - <<'PY'
+          import os
+          from datetime import datetime
+          from zoneinfo import ZoneInfo
+          from supabase import create_client
+
+          TARGET_NAME = "hit_1plus"
+
+          supabase = create_client(
+              os.environ["SUPABASE_URL"],
+              os.environ["SUPABASE_SERVICE_ROLE_KEY"],
+          )
+
+          input_date = (os.getenv("TARGET_DATE") or "").strip()
+          target_date = input_date or datetime.now(ZoneInfo("America/New_York")).date().isoformat()
+
+          result = (
+              supabase
+              .table("mlb_ml_predictions_v3")
+              .select("prediction_id,model_run_id,is_active", count="exact")
+              .eq("target_name", TARGET_NAME)
+              .eq("prediction_run_date", target_date)
+              .order("model_run_id", desc=True)
+              .limit(10)
+              .execute()
+          )
+
+          row_count = result.count or 0
+          print(f"V3 prediction rows for {target_date}: {row_count}")
+          print("Sample rows:")
+          print(result.data)
+
+          if row_count <= 0:
+              raise RuntimeError(
+                  f"V3 model completed but no predictions were written for {target_date}."
+              )
+
+          model_run_ids = sorted(
+              {
+                  row.get("model_run_id")
+                  for row in (result.data or [])
+                  if row.get("model_run_id") is not None
+              },
+              reverse=True,
+          )
+
+          if not model_run_ids:
+              raise RuntimeError(
+                  f"V3 predictions were written for {target_date}, but no model_run_id was returned."
+              )
+
+          model_run_id = model_run_ids[0]
+          print(f"Activating official V3 model_run_id={model_run_id} for {target_date}.")
+
+          activation = (
+              supabase
+              .rpc(
+                  "activate_mlb_ml_predictions_v3_run",
+                  {
+                      "p_prediction_run_date": target_date,
+                      "p_target_name": TARGET_NAME,
+                      "p_model_run_id": model_run_id,
+                  },
+              )
+              .execute()
+          )
+          print("Activation RPC result:")
+          print(activation.data)
+
+          active_check = (
+              supabase
+              .table("mlb_ml_predictions_v3")
+              .select("prediction_id,model_run_id", count="exact")
+              .eq("target_name", TARGET_NAME)
+              .eq("prediction_run_date", target_date)
+              .eq("model_run_id", model_run_id)
+              .eq("is_active", True)
+              .limit(5)
+              .execute()
+          )
+
+          active_count = active_check.count or 0
+          print(f"Active V3 rows for {target_date}, model_run_id={model_run_id}: {active_count}")
+          print("Active sample rows:")
+          print(active_check.data)
+
+          if active_count <= 0:
+              raise RuntimeError(
+                  f"V3 activation failed for {target_date}, model_run_id={model_run_id}."
+              )
+
+          activated_rows = activation.data or 0
+          if isinstance(activated_rows, list) and activated_rows:
+              activated_rows = activated_rows[0]
+
+          print(f"Rows activated by RPC: {activated_rows}")
+          if activated_rows and active_count != activated_rows:
+              raise RuntimeError(
+                  f"V3 activation count mismatch for {target_date}, model_run_id={model_run_id}. "
+                  f"RPC activated {activated_rows}, but active check found {active_count}."
+              )
+
+          print("V3 prediction write validation and activation passed.")
+          PY
+
+      - name: Refresh V3 player drawer explanations
+        if: env.SKIP_V3_MODEL != 'true'
+        run: |
+          python - <<'PY'
+          import os
+          from datetime import datetime
+          from zoneinfo import ZoneInfo
+
+          from supabase import create_client
+
+          supabase = create_client(
+              os.environ["SUPABASE_URL"],
+              os.environ["SUPABASE_SERVICE_ROLE_KEY"],
+          )
+
+          input_date = (os.getenv("TARGET_DATE") or "").strip()
+          target_date = input_date or datetime.now(
+              ZoneInfo("America/New_York")
+          ).date().isoformat()
+
+          print(f"Refreshing V3 player drawer explanations for {target_date}.")
+
+          result = (
+              supabase
+              .rpc(
+                  "mlb_v3_refresh_drawer_explanations_fallback",
+                  {"p_prediction_run_date": target_date},
+              )
+              .execute()
+          )
+
+          refreshed_rows = result.data or 0
+          print(f"V3 drawer explanation rows refreshed: {refreshed_rows}")
+
+          if isinstance(refreshed_rows, list) and refreshed_rows:
+              refreshed_rows = refreshed_rows[0]
+
+          if not refreshed_rows:
+              raise RuntimeError(
+                  f"Drawer explanation refresh returned no rows for {target_date}."
+              )
+
+          print("V3 player drawer explanation refresh passed.")
+          PY
