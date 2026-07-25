@@ -2,16 +2,25 @@ name: Load Hit Prop Market Odds
 
 on:
   workflow_dispatch:
+    inputs:
+      target_date:
+        description: "Optional Eastern game date in YYYY-MM-DD. Defaults to today."
+        required: false
+        type: string
+      bookmakers:
+        description: "Use 'all' for every available sportsbook, or provide a comma-separated allowlist."
+        required: false
+        default: "all"
+        type: string
   schedule:
-    # 9:00 AM EDT (13:00 UTC).
-    # Odds are not required for V3 ML training, so run after the core data/model pipeline.
-    - cron: "0 13 * * *"
+    # Multiple refreshes improve player coverage as books post markets during the day.
+    # 9:00 AM, 11:00 AM, and 1:00 PM EDT.
+    - cron: "0 13,15,17 * * *"
 
 jobs:
   load-hit-prop-market-odds:
     runs-on: ubuntu-latest
-
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     env:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -21,8 +30,10 @@ jobs:
       # Loader configuration
       SPORT_KEY: baseball_mlb
       MARKET_KEY: batter_hits
-      BOOKMAKERS: draftkings,bet365
-      MAX_EVENTS_PER_RUN: 15
+      ODDS_REGIONS: us
+      BOOKMAKERS: ${{ inputs.bookmakers || 'all' }}
+      ODDS_TARGET_DATE: ${{ inputs.target_date || '' }}
+      MAX_EVENTS_PER_RUN: 20
       SKIP_STARTED_GAMES: "true"
 
     steps:
@@ -43,19 +54,20 @@ jobs:
         run: |
           echo "Sport: $SPORT_KEY"
           echo "Market: $MARKET_KEY"
+          echo "Regions: $ODDS_REGIONS"
           echo "Books: $BOOKMAKERS"
+          echo "Target Date: ${ODDS_TARGET_DATE:-today Eastern}"
           echo "Max Events: $MAX_EVENTS_PER_RUN"
           echo "Skip Started Games: $SKIP_STARTED_GAMES"
 
       - name: Load MLB Hit Prop Market Odds
-        run: |
-          python scripts/load_hit_prop_market_odds.py
+        run: python scripts/load_hit_prop_market_odds.py
 
       - name: Upload loader log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: hit-prop-loader-log
+          name: hit-prop-loader-log-${{ github.run_id }}
           path: |
             *.log
             logs/**
