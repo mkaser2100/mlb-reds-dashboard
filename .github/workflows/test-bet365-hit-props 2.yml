@@ -50,7 +50,7 @@ jobs:
 
       - name: Run Bet365 1+ hits diagnostic
         run: |
-          python test_bet365_1plus_hits.py
+          python scripts/test_bet365_1plus_hits.py
 
       - name: Upload Bet365 diagnostic results
         if: always()
