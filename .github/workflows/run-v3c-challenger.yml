@@ -1,0 +1,128 @@
+name: Run V3-C Challenger
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_date:
+        description: "Optional YYYY-MM-DD date. For manual runs, applies to the selected mode."
+        required: false
+        type: string
+      mode:
+        description: "Score V3-C, sync actuals, or run both."
+        required: true
+        default: "both"
+        type: choice
+        options:
+          - both
+          - score
+          - sync
+
+  workflow_run:
+    workflows:
+      - "Run V3 Hit Model"
+      - "Load V3 Hit Actuals"
+    types: [completed]
+
+  schedule:
+    # Backup run at 13:05 UTC / 9:05 AM EDT.
+    # Scores today's slate and synchronizes yesterday's actuals.
+    - cron: "5 13 * * *"
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: run-v3c-challenger
+  cancel-in-progress: false
+
+jobs:
+  run-v3c-challenger:
+    runs-on: ubuntu-latest
+
+    # workflow_run executions proceed only after the upstream workflow succeeds.
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      V3C_PENALTY_VERSION: v3c_contradiction_penalty_v1
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install supabase
+
+      - name: Resolve V3-C run mode and dates
+        shell: bash
+        env:
+          MANUAL_TARGET_DATE: ${{ github.event.inputs.target_date }}
+          MANUAL_MODE: ${{ github.event.inputs.mode }}
+          UPSTREAM_WORKFLOW: ${{ github.event.workflow_run.name }}
+        run: |
+          python - <<'PY'
+          import os
+          from datetime import datetime, timedelta
+          from zoneinfo import ZoneInfo
+
+          event_name = os.environ["GITHUB_EVENT_NAME"]
+          today = datetime.now(ZoneInfo("America/New_York")).date()
+          yesterday = today - timedelta(days=1)
+
+          mode = "both"
+          score_date = today.isoformat()
+          actuals_date = yesterday.isoformat()
+
+          if event_name == "workflow_dispatch":
+              mode = (os.getenv("MANUAL_MODE") or "both").strip()
+              manual_date = (os.getenv("MANUAL_TARGET_DATE") or "").strip()
+              if manual_date:
+                  # Manual backfills intentionally use the supplied date for both
+                  # scoring and actual synchronization.
+                  score_date = manual_date
+                  actuals_date = manual_date
+
+          elif event_name == "workflow_run":
+              upstream = (os.getenv("UPSTREAM_WORKFLOW") or "").strip()
+              if upstream == "Run V3 Hit Model":
+                  mode = "score"
+                  score_date = today.isoformat()
+              elif upstream == "Load V3 Hit Actuals":
+                  mode = "sync"
+                  actuals_date = yesterday.isoformat()
+              else:
+                  raise RuntimeError(f"Unsupported upstream workflow: {upstream!r}")
+
+          elif event_name == "schedule":
+              mode = "both"
+
+          else:
+              raise RuntimeError(f"Unsupported GitHub event: {event_name!r}")
+
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as env_file:
+              env_file.write(f"V3C_MODE={mode}\n")
+              env_file.write(f"V3C_SCORE_DATE={score_date}\n")
+              env_file.write(f"V3C_ACTUALS_DATE={actuals_date}\n")
+
+          print(
+              f"Resolved V3-C run: event={event_name}, mode={mode}, "
+              f"score_date={score_date}, actuals_date={actuals_date}"
+          )
+          PY
+
+      - name: Run V3-C challenger
+        run: |
+          python scripts/run_v3c_challenger.py \
+            --mode "$V3C_MODE" \
+            --score-date "$V3C_SCORE_DATE" \
+            --actuals-date "$V3C_ACTUALS_DATE" \
+            --penalty-version "$V3C_PENALTY_VERSION"
