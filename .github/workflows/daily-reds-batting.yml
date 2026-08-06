@@ -1,0 +1,16 @@
+name: Daily Reds Data Load (Retired)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  retired:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Explain retirement
+        run: |
+          echo "This workflow has been consolidated into:"
+          echo ".github/workflows/load-all-mlb-phase-1.yml"
+          echo ""
+          echo "Do not schedule or run this workflow for production data loading."
+          echo "After one successful consolidated scheduled run, delete this file."
