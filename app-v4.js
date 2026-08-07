@@ -5,7 +5,7 @@ const REDS_TEAM_ID = 113;
 const SEASON = 2026;
 const PERFORMANCE_WINDOWS = [3, 5, 6, 10];
 
-console.info("MLB Hit Lab app-v4 loaded: v3-window-filter-fix-20260807");
+console.info("MLB Hit Lab app-v4 loaded: model-performance-window-fix-20260807b");
 
 const client = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
@@ -4519,28 +4519,35 @@ function mpModelLabel(model) {
 }
 
 function mpNormalizeWindowLabel(value, row = {}) {
-  const raw = String(
-    value ||
-    mpField(row, ["range_label", "window_label", "time_window", "period", "lookback_label"], "Season")
-  );
-  const lower = raw.toLowerCase().trim();
   const rangeKey = String(mpField(row, ["range_key"], "")).toLowerCase().trim();
 
-  // Window identity must come from the explicit label/key/window_days fields.
-  // Do NOT use `days` here: for V3 scorecard rows, `days` is the number of
-  // evaluated V3 days available, not the selected scorecard lookback window.
-  if (lower.includes("season") || rangeKey === "season") return "Season";
-  if (lower.includes("last 30") || lower === "last30" || rangeKey === "last30") return "Last 30";
-  if (lower.includes("last 14") || lower === "last14" || rangeKey === "last14") return "Last 14";
-  if (lower.includes("last 7") || lower === "last7" || rangeKey === "last7") return "Last 7";
+  // Scorecard range_key is the strongest source of truth because V3's `days`
+  // field represents evaluated sample days, not the selected lookback window.
+  if (rangeKey === "season") return "Season";
+  if (rangeKey === "last30") return "Last 30";
+  if (rangeKey === "last14") return "Last 14";
+  if (rangeKey === "last7") return "Last 7";
 
+  const raw = String(
+    value ||
+    mpField(row, ["range_label", "window_label", "time_window", "period", "lookback_label"], "")
+  ).trim();
+  const lower = raw.toLowerCase();
+
+  if (lower === "season" || lower.includes("season")) return "Season";
+  if (lower === "last30" || lower.includes("last 30")) return "Last 30";
+  if (lower === "last14" || lower.includes("last 14")) return "Last 14";
+  if (lower === "last7" || lower.includes("last 7")) return "Last 7";
+
+  // Rolling rows use window_days. Never use `days` or `days_in_window` to
+  // identify a scorecard window; those are sample-size fields for V3.
   const windowDays = Number(mpField(row, ["window_days", "lookback_days"], NaN));
   if (windowDays === 9999) return "Season";
   if (windowDays === 30) return "Last 30";
   if (windowDays === 14) return "Last 14";
   if (windowDays === 7) return "Last 7";
 
-  return raw.replace(/\s+Days$/i, "");
+  return raw ? raw.replace(/\s+Days$/i, "") : "Season";
 }
 
 function mpRateValue(row, names) {
@@ -4568,33 +4575,59 @@ function mpSourceLabel(source) {
   return `${mpInt(source.rows.length)} rows · ${source.sourceView}${freshness}`;
 }
 
+function mpUniqueRowsByModel(rows) {
+  const byModel = new Map();
+
+  (rows || []).forEach((row) => {
+    const model = mpModel(row);
+    if (!["V1", "V2", "V3"].includes(model)) return;
+
+    // Keep the first exact-window row for each model. The page cache is expected
+    // to have exactly one model row per window; this guard prevents duplicates
+    // from ever rendering if a malformed or stale payload is encountered.
+    if (!byModel.has(model)) byModel.set(model, row);
+  });
+
+  return ["V1", "V2", "V3"]
+    .map((model) => byModel.get(model))
+    .filter(Boolean);
+}
+
 function mpFilteredScorecardRows() {
-  const modelMatches = (row) => performanceSelectedModel === "All" || mpModel(row) === performanceSelectedModel;
-  const windowMatches = (row) => mpNormalizeWindowLabel(null, row) === performanceSelectedTime;
+  const modelMatches = (row) =>
+    performanceSelectedModel === "All" || mpModel(row) === performanceSelectedModel;
+  const windowMatches = (row) =>
+    mpNormalizeWindowLabel(null, row) === performanceSelectedTime;
 
-  const scorecardRows = (modelPerformanceData.scorecard.rows || [])
-    .filter((row) => modelMatches(row) && windowMatches(row));
-
-  if (scorecardRows.length) return scorecardRows;
-
-  // Last 14 is available in the rolling performance cache, but may not exist
-  // in the scorecard cache if the database refresh job has not rebuilt the
-  // synthesized scorecard payload yet. Use rolling rows as a read-only fallback
-  // so the UI never shows an empty card for a valid window. Rolling rows do not
-  // carry overall hit rate, so the Overall column intentionally renders as —.
-  if (performanceSelectedTime === "Last 14") {
-    return (modelPerformanceData.rolling.rows || [])
+  const scorecardRows = mpUniqueRowsByModel(
+    (modelPerformanceData.scorecard.rows || [])
       .filter((row) => modelMatches(row) && windowMatches(row))
-      .map((row) => ({
-        ...row,
-        range_key: "last14",
-        range_label: "Last 14",
-        overall_hit_rate_pct: row.overall_hit_rate_pct ?? null,
-        _scorecard_fallback_source: "rolling"
-      }));
-  }
+  );
 
-  return [];
+  // Fill only missing models from rolling data. This is deliberately per-model
+  // rather than all-or-nothing so Last 7/Last 14 cannot lose V3 simply because
+  // V1/V2 already exist in the scorecard payload.
+  const presentModels = new Set(scorecardRows.map((row) => mpModel(row)));
+  const rollingFallbackRows = mpUniqueRowsByModel(
+    (modelPerformanceData.rolling.rows || [])
+      .filter((row) =>
+        modelMatches(row) &&
+        windowMatches(row) &&
+        !presentModels.has(mpModel(row))
+      )
+  ).map((row) => ({
+    ...row,
+    range_key:
+      performanceSelectedTime === "Season" ? "season" :
+      performanceSelectedTime === "Last 30" ? "last30" :
+      performanceSelectedTime === "Last 14" ? "last14" :
+      "last7",
+    range_label: performanceSelectedTime,
+    overall_hit_rate_pct: row.overall_hit_rate_pct ?? null,
+    _scorecard_fallback_source: "rolling"
+  }));
+
+  return mpUniqueRowsByModel([...scorecardRows, ...rollingFallbackRows]);
 }
 
 async function mpReadView(viewName, options = {}) {
