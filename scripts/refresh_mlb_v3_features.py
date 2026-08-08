@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Refresh MLB V3 enhancement features and verify completion after RPC timeouts."""
+"""Refresh MLB V3 enhancement features with idempotency and lock-timeout recovery."""
 from __future__ import annotations
 
 import argparse
@@ -15,13 +15,15 @@ import requests
 
 EASTERN = ZoneInfo("America/New_York")
 
-# PostgREST/Cloudflare may return a 504 while PostgreSQL continues the function.
-# The RPC is therefore submitted once. Ambiguous server/network failures are
-# resolved by polling the refresh audit table instead of resubmitting the work.
+# A 504/client timeout can be ambiguous: PostgreSQL may still be working.
+# A PostgreSQL 55P03 lock timeout is different: that attempt failed and may
+# safely be retried after checking whether another worker completed the refresh.
 REFRESH_REQUEST_TIMEOUT_SECONDS = 620
 STATUS_REQUEST_TIMEOUT_SECONDS = 30
 POLL_INTERVAL_SECONDS = 15
 POLL_TIMEOUT_SECONDS = 15 * 60
+LOCK_RETRY_DELAY_SECONDS = 60
+MAX_LOCK_TIMEOUT_RETRIES = 1
 
 EXPECTED_FAMILIES = (
     "contact_quality",
@@ -103,9 +105,10 @@ def baseline_refresh_run_id(rows: list[dict[str, Any]]) -> int:
     return max(ids, default=0)
 
 
-def latest_new_runs_by_family(
+def latest_runs_by_family(
     rows: list[dict[str, Any]],
-    baseline_run_id: int,
+    *,
+    newer_than_run_id: int | None = None,
 ) -> dict[str, dict[str, Any]]:
     latest: dict[str, dict[str, Any]] = {}
 
@@ -113,7 +116,9 @@ def latest_new_runs_by_family(
         family = str(row.get("feature_family") or "")
         run_id = int(row.get("refresh_run_id") or 0)
 
-        if family not in EXPECTED_FAMILIES or run_id <= baseline_run_id:
+        if family not in EXPECTED_FAMILIES:
+            continue
+        if newer_than_run_id is not None and run_id <= newer_than_run_id:
             continue
 
         if family not in latest:
@@ -139,6 +144,41 @@ def summarize_runs(runs: dict[str, dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def all_expected_families_complete(
+    rows: list[dict[str, Any]],
+) -> tuple[bool, dict[str, dict[str, Any]]]:
+    latest = latest_runs_by_family(rows)
+    complete = {
+        family
+        for family, row in latest.items()
+        if str(row.get("status") or "").lower() == "complete"
+    }
+    return complete == set(EXPECTED_FAMILIES), latest
+
+
+def refresh_already_complete(
+    session: requests.Session,
+    supabase_url: str,
+    headers: dict[str, str],
+    game_date: date,
+) -> tuple[bool, dict[str, dict[str, Any]]]:
+    rows = fetch_refresh_runs(session, supabase_url, headers, game_date)
+    return all_expected_families_complete(rows)
+
+
+def is_lock_timeout_response(response: requests.Response) -> bool:
+    text = response.text.lower()
+    return (
+        response.status_code >= 500
+        and (
+            '"code":"55p03"' in text
+            or '"code": "55p03"' in text
+            or "55p03" in text
+            or "lock timeout" in text
+        )
+    )
+
+
 def poll_for_completion(
     session: requests.Session,
     supabase_url: str,
@@ -154,7 +194,7 @@ def poll_for_completion(
     transient_status_errors = 0
 
     print(
-        "The RPC response was inconclusive. Polling "
+        "The RPC response was ambiguous. Polling "
         "mlb_ml_feature_refresh_runs for committed completion records..."
     )
     print(
@@ -170,7 +210,7 @@ def poll_for_completion(
                 headers,
                 game_date,
             )
-            runs = latest_new_runs_by_family(rows, baseline_run_id)
+            runs = latest_runs_by_family(rows, newer_than_run_id=baseline_run_id)
             last_summary = summarize_runs(runs)
             transient_status_errors = 0
         except (requests.RequestException, ValueError, RuntimeError) as exc:
@@ -265,33 +305,58 @@ def main() -> int:
             headers,
             args.game_date,
         )
+
+        already_complete, existing_runs = all_expected_families_complete(
+            baseline_rows
+        )
+        if already_complete:
+            print(
+                json.dumps(
+                    {
+                        "status": "complete",
+                        "completion_source": "preexisting_refresh_runs",
+                        "game_date": args.game_date.isoformat(),
+                        "message": (
+                            "All required V3 feature families are already complete; "
+                            "no refresh RPC was submitted."
+                        ),
+                        "refresh_runs": summarize_runs(existing_runs),
+                    },
+                    default=str,
+                    indent=2,
+                )
+            )
+            return 0
+
         baseline_run_id = baseline_refresh_run_id(baseline_rows)
         print(
-            f"Submitting one V3 feature refresh for {args.game_date.isoformat()}. "
+            f"Submitting V3 feature refresh for {args.game_date.isoformat()}. "
             f"Baseline refresh_run_id={baseline_run_id}."
         )
 
-        response: requests.Response | None = None
         ambiguous_error: Exception | None = None
 
-        try:
-            response = submit_refresh_once(
-                session,
-                endpoint,
-                headers,
-                args.game_date,
-            )
-        except requests.RequestException as exc:
-            # A client timeout or connection termination does not prove that
-            # PostgreSQL stopped. Do not submit the RPC again.
-            ambiguous_error = exc
-            print(
-                "Refresh RPC ended with an ambiguous network error; "
-                "the database may still be running it. "
-                f"Error: {exc}",
-                file=sys.stderr,
-            )
-        else:
+        for attempt in range(MAX_LOCK_TIMEOUT_RETRIES + 1):
+            response: requests.Response | None = None
+
+            try:
+                response = submit_refresh_once(
+                    session,
+                    endpoint,
+                    headers,
+                    args.game_date,
+                )
+            except requests.RequestException as exc:
+                # Client/network timeouts are ambiguous: the DB may still be running.
+                ambiguous_error = exc
+                print(
+                    "Refresh RPC ended with an ambiguous network error; "
+                    "the database may still be running it. "
+                    f"Error: {exc}",
+                    file=sys.stderr,
+                )
+                break
+
             if response.ok:
                 try:
                     payload: Any = response.json()
@@ -304,6 +369,7 @@ def main() -> int:
                             "status": "complete",
                             "completion_source": "rpc_response",
                             "game_date": args.game_date.isoformat(),
+                            "attempt": attempt + 1,
                             "result": payload,
                         },
                         default=str,
@@ -312,21 +378,67 @@ def main() -> int:
                 )
                 return 0
 
+            if is_lock_timeout_response(response):
+                print(
+                    "Refresh RPC hit PostgreSQL lock timeout (55P03). "
+                    "This attempt failed; it is safe to re-check and retry.",
+                    file=sys.stderr,
+                )
+
+                if attempt >= MAX_LOCK_TIMEOUT_RETRIES:
+                    raise RuntimeError(
+                        "V3 feature refresh hit PostgreSQL lock timeout (55P03) "
+                        "again after one retry. Another process is still contending "
+                        "for the feature refresh lock."
+                    )
+
+                print(
+                    f"Waiting {LOCK_RETRY_DELAY_SECONDS}s before checking whether "
+                    "another worker completed the refresh..."
+                )
+                time.sleep(LOCK_RETRY_DELAY_SECONDS)
+
+                complete, completed_runs = refresh_already_complete(
+                    session,
+                    supabase_url,
+                    headers,
+                    args.game_date,
+                )
+                if complete:
+                    print(
+                        json.dumps(
+                            {
+                                "status": "complete",
+                                "completion_source": "other_worker_after_lock_timeout",
+                                "game_date": args.game_date.isoformat(),
+                                "refresh_runs": summarize_runs(completed_runs),
+                            },
+                            default=str,
+                            indent=2,
+                        )
+                    )
+                    return 0
+
+                print("No complete refresh found. Retrying the RPC once.")
+                continue
+
             if 400 <= response.status_code < 500 and response.status_code != 429:
                 raise RuntimeError(
                     "Feature refresh was rejected and was not submitted again "
                     f"({response.status_code}): {response.text}"
                 )
 
+            # 5xx/429 responses can be ambiguous; do not blindly resubmit.
             ambiguous_error = RuntimeError(
                 f"RPC returned HTTP {response.status_code}: {response.text}"
             )
             print(
-                "Refresh RPC returned a server/gateway response that does not "
-                "prove database failure. The RPC will not be retried. "
+                "Refresh RPC returned an ambiguous server/gateway response. "
+                "The RPC will not be retried; polling committed refresh records. "
                 f"Response: {ambiguous_error}",
                 file=sys.stderr,
             )
+            break
 
         completed_runs = poll_for_completion(
             session,
