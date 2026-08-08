@@ -17,18 +17,93 @@ on:
     # 12:15 UTC = 8:15 AM EDT / 7:15 AM EST.
     - cron: "15 12 * * *"
 
-concurrency:
-  group: refresh-mlb-v3-features-${{ inputs.game_date || 'today' }}
-  cancel-in-progress: false
-
 permissions:
+  actions: read
   contents: read
 
+concurrency:
+  group: refresh-mlb-v3-features
+  cancel-in-progress: false
+
 jobs:
-  refresh-features:
-    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+  once-daily-gate:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    outputs:
+      should_run: ${{ steps.gate.outputs.should_run }}
+
+    steps:
+      - name: Enforce one automatic run per Eastern day
+        id: gate
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const automaticEvents = new Set(["schedule", "workflow_run"]);
+
+            // Manual runs remain available for intentional same-day reruns.
+            if (!automaticEvents.has(context.eventName)) {
+              core.info(`Event ${context.eventName} is not automatic; allowing run.`);
+              core.setOutput("should_run", "true");
+              return;
+            }
+
+            const easternDate = (value) => {
+              const parts = new Intl.DateTimeFormat("en-US", {
+                timeZone: "America/New_York",
+                year: "numeric",
+                month: "2-digit",
+                day: "2-digit",
+              }).formatToParts(new Date(value));
+
+              const values = Object.fromEntries(
+                parts
+                  .filter((part) => part.type !== "literal")
+                  .map((part) => [part.type, part.value])
+              );
+
+              return `${values.year}-${values.month}-${values.day}`;
+            };
+
+            const todayEastern = easternDate(new Date());
+            const workflowPrefix = `${context.repo.owner}/${context.repo.repo}/`;
+            const workflowId = process.env.GITHUB_WORKFLOW_REF
+              .split("@")[0]
+              .replace(workflowPrefix, "");
+
+            const runs = await github.paginate(
+              github.rest.actions.listWorkflowRuns,
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: workflowId,
+                per_page: 100,
+              }
+            );
+
+            const priorSuccessfulAutomaticRun = runs.find((run) => {
+              if (run.id === context.runId) return false;
+              if (!automaticEvents.has(run.event)) return false;
+              if (run.conclusion !== "success") return false;
+              return easternDate(run.created_at) === todayEastern;
+            });
+
+            if (priorSuccessfulAutomaticRun) {
+              core.info(
+                `Skipping duplicate automatic feature refresh. Prior successful run ` +
+                `${priorSuccessfulAutomaticRun.id} was created at ` +
+                `${priorSuccessfulAutomaticRun.created_at}.`
+              );
+              core.setOutput("should_run", "false");
+              return;
+            }
+
+            core.info("No prior successful automatic feature refresh found today.");
+            core.setOutput("should_run", "true");
+
+  refresh-features:
+    needs: once-daily-gate
+    if: ${{ needs.once-daily-gate.outputs.should_run == 'true' && (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 22
 
     env:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -68,8 +143,11 @@ jobs:
             echo
             echo "- Trigger: \`${{ github.event_name }}\`"
             echo "- Game date: \`${{ inputs.game_date || 'today ET' }}\`"
-            echo "- RPC submissions per run: \`1\`"
-            echo "- 504/network handling: poll \`mlb_ml_feature_refresh_runs\`"
+            echo "- Automatic duplicate guard: \`enabled\`"
+            echo "- Concurrency guard: \`enabled\`"
+            echo "- Existing-complete check: \`enabled\`"
+            echo "- PostgreSQL 55P03 handling: \`re-check + one retry after 60s\`"
+            echo "- Ambiguous 504/network handling: \`poll mlb_ml_feature_refresh_runs\`"
             echo "- Poll timeout: \`15 minutes\`"
-            echo "- Job timeout: \`20 minutes\`"
+            echo "- Job timeout: \`22 minutes\`"
           } >> "$GITHUB_STEP_SUMMARY"

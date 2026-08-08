@@ -20,15 +20,97 @@ on:
 
   schedule:
     # Backup run at 12:15 UTC / 8:15 AM EDT.
-    # This should run AFTER the MLB batting game-log refresh and BEFORE V3 model training.
+    # If the dependency-driven run already succeeded today, the gate below skips this backup.
     - cron: "15 12 * * *"
 
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: load-v3-hit-actuals
+  cancel-in-progress: false
+
 jobs:
+  once-daily-gate:
+    runs-on: ubuntu-latest
+    outputs:
+      should_run: ${{ steps.gate.outputs.should_run }}
+
+    steps:
+      - name: Enforce one automatic run per Eastern day
+        id: gate
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const automaticEvents = new Set(["schedule", "workflow_run"]);
+
+            // Manual runs remain available for intentional same-day reruns/backfills.
+            if (!automaticEvents.has(context.eventName)) {
+              core.info(`Event ${context.eventName} is not automatic; allowing run.`);
+              core.setOutput("should_run", "true");
+              return;
+            }
+
+            const easternDate = (value) => {
+              const parts = new Intl.DateTimeFormat("en-US", {
+                timeZone: "America/New_York",
+                year: "numeric",
+                month: "2-digit",
+                day: "2-digit",
+              }).formatToParts(new Date(value));
+
+              const values = Object.fromEntries(
+                parts
+                  .filter((part) => part.type !== "literal")
+                  .map((part) => [part.type, part.value])
+              );
+
+              return `${values.year}-${values.month}-${values.day}`;
+            };
+
+            const todayEastern = easternDate(new Date());
+            const workflowPrefix = `${context.repo.owner}/${context.repo.repo}/`;
+            const workflowId = process.env.GITHUB_WORKFLOW_REF
+              .split("@")[0]
+              .replace(workflowPrefix, "");
+
+            const runs = await github.paginate(
+              github.rest.actions.listWorkflowRuns,
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: workflowId,
+                per_page: 100,
+              }
+            );
+
+            const priorSuccessfulAutomaticRun = runs.find((run) => {
+              if (run.id === context.runId) return false;
+              if (!automaticEvents.has(run.event)) return false;
+              if (run.conclusion !== "success") return false;
+              return easternDate(run.created_at) === todayEastern;
+            });
+
+            if (priorSuccessfulAutomaticRun) {
+              core.info(
+                `Skipping duplicate automatic actuals run. Prior successful run ` +
+                `${priorSuccessfulAutomaticRun.id} was created at ` +
+                `${priorSuccessfulAutomaticRun.created_at}.`
+              );
+              core.setOutput("should_run", "false");
+              return;
+            }
+
+            core.info("No prior successful automatic actuals run found today.");
+            core.setOutput("should_run", "true");
+
   load-v3-hit-actuals:
+    needs: once-daily-gate
     runs-on: ubuntu-latest
 
     # If triggered by workflow_run, only run when Phase 1 succeeded.
-    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ needs.once-daily-gate.outputs.should_run == 'true' && (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success') }}
 
     env:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -73,8 +155,6 @@ jobs:
           print(f"Preflight for V3 actuals target date: {target_date}")
           print(f"Minimum required batting-log coverage: {min_coverage:.1f}%")
 
-          # Count only the official active V3 run. The raw table can contain inactive
-          # reruns for audit/history, which would inflate this count.
           predictions = (
               supabase
               .table("v_mlb_ml_predictions_v3_active")
@@ -112,12 +192,6 @@ jobs:
                   "Run the MLB game-log refresh before loading V3 actuals."
               )
 
-          # Estimate coverage without calling a generic execute_sql RPC. This project
-          # does not expose public.execute_sql(query), and Supabase PostgREST correctly
-          # returns PGRST202 when that nonexistent function is called.
-          #
-          # DNP players will not have batting logs, so this is informational. The final
-          # threshold check happens after load_mlb_v3_actuals classifies played vs DNP.
           prediction_pairs_result = (
               supabase
               .table("v_mlb_ml_predictions_v3_active")
@@ -149,7 +223,10 @@ jobs:
           }
 
           matched_batting_logs = len(prediction_pairs & batting_log_pairs)
-          coverage_pct = (matched_batting_logs / len(prediction_pairs) * 100) if prediction_pairs else 0
+          coverage_pct = (
+              matched_batting_logs / len(prediction_pairs) * 100
+              if prediction_pairs else 0
+          )
 
           print("Preflight active-run batting-log coverage:")
           print({
@@ -181,7 +258,6 @@ jobs:
 
           print(f"Loading V3 hit actuals for prediction date: {target_date}")
 
-          # Lightweight coverage check using the status view after running the loader.
           result = supabase.rpc(
               "load_mlb_v3_actuals",
               {
@@ -221,12 +297,20 @@ jobs:
           prediction_rows = row.get("prediction_rows") or 0
           played_rows = row.get("played_rows") or 0
           dnp_rows = row.get("did_not_play_rows") or 0
-          pending_rows = (row.get("pending_data_rows") or 0) + (row.get("game_not_loaded_rows") or 0)
+          pending_rows = (
+              (row.get("pending_data_rows") or 0)
+              + (row.get("game_not_loaded_rows") or 0)
+          )
 
           resolved_rows = played_rows + dnp_rows
-          resolved_pct = (resolved_rows / prediction_rows * 100) if prediction_rows else 0
+          resolved_pct = (
+              resolved_rows / prediction_rows * 100 if prediction_rows else 0
+          )
 
-          print(f"Resolved rows: {resolved_rows}/{prediction_rows} ({resolved_pct:.1f}%)")
+          print(
+              f"Resolved rows: {resolved_rows}/{prediction_rows} "
+              f"({resolved_pct:.1f}%)"
+          )
           print(f"Played rows: {played_rows}")
           print(f"DNP rows: {dnp_rows}")
           print(f"Pending/game-not-loaded rows: {pending_rows}")
