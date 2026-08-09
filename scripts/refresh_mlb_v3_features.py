@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Refresh MLB V3 enhancement features with idempotency and lock-timeout recovery."""
+"""Refresh MLB V3 enhancement features with prerequisite recovery and lock-timeout handling."""
 from __future__ import annotations
 
 import argparse
@@ -15,15 +15,18 @@ import requests
 
 EASTERN = ZoneInfo("America/New_York")
 
-# A 504/client timeout can be ambiguous: PostgreSQL may still be working.
-# A PostgreSQL 55P03 lock timeout is different: that attempt failed and may
-# safely be retried after checking whether another worker completed the refresh.
 REFRESH_REQUEST_TIMEOUT_SECONDS = 620
 STATUS_REQUEST_TIMEOUT_SECONDS = 30
 POLL_INTERVAL_SECONDS = 15
 POLL_TIMEOUT_SECONDS = 15 * 60
 LOCK_RETRY_DELAY_SECONDS = 60
 MAX_LOCK_TIMEOUT_RETRIES = 1
+
+# The V3 wide feature view also depends on the daily V2 snapshot created by
+# Phase 1. The feature-refresh workflow can finish before that snapshot exists,
+# so recover it here before declaring the feature workflow successful.
+V2_PREREQ_ATTEMPTS = 3
+V2_PREREQ_RETRY_DELAY_SECONDS = 60
 
 EXPECTED_FAMILIES = (
     "contact_quality",
@@ -59,6 +62,134 @@ def build_headers(service_role_key: str) -> dict[str, str]:
         "Content-Type": "application/json",
         "Accept": "application/json",
     }
+
+
+def rpc_post(
+    session: requests.Session,
+    supabase_url: str,
+    headers: dict[str, str],
+    rpc_name: str,
+    payload: dict[str, Any],
+    *,
+    timeout: int = STATUS_REQUEST_TIMEOUT_SECONDS,
+) -> Any:
+    response = session.post(
+        f"{supabase_url}/rest/v1/rpc/{rpc_name}",
+        headers={**headers, "Prefer": "return=representation"},
+        json=payload,
+        timeout=timeout,
+    )
+    response.raise_for_status()
+    if not response.text:
+        return None
+    try:
+        return response.json()
+    except ValueError:
+        return response.text
+
+
+def normalize_rpc_object(payload: Any) -> dict[str, Any]:
+    if isinstance(payload, list):
+        payload = payload[0] if payload else {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def get_pipeline_status(
+    session: requests.Session,
+    supabase_url: str,
+    headers: dict[str, str],
+    game_date: date,
+) -> dict[str, Any]:
+    payload = rpc_post(
+        session,
+        supabase_url,
+        headers,
+        "get_mlb_daily_prediction_pipeline_status",
+        {"p_game_date": game_date.isoformat()},
+    )
+    return normalize_rpc_object(payload)
+
+
+def ensure_v2_feature_source(
+    session: requests.Session,
+    supabase_url: str,
+    headers: dict[str, str],
+    game_date: date,
+) -> dict[str, Any]:
+    """Guarantee the V2 snapshot / wide V3 source exists before feature success."""
+    status = get_pipeline_status(
+        session, supabase_url, headers, game_date
+    )
+    print("V3 prerequisite pipeline status:")
+    print(json.dumps(status, default=str))
+
+    eligible_games = int(status.get("eligible_game_count") or 0)
+    if eligible_games <= 0:
+        print(
+            f"No prediction-eligible games for {game_date.isoformat()}; "
+            "no V2 prerequisite snapshot is required."
+        )
+        return status
+
+    feature_rows = int(status.get("feature_row_count") or 0)
+    v2_rows = int(status.get("v2_prediction_row_count") or 0)
+
+    if feature_rows > 0 and v2_rows > 0:
+        print(
+            f"V2 prerequisite already ready: feature_rows={feature_rows}, "
+            f"v2_prediction_rows={v2_rows}."
+        )
+        return status
+
+    print(
+        "V2 prerequisite is missing. The feature-refresh workflow will "
+        "self-heal by creating today's V2 snapshot before continuing."
+    )
+
+    last_payload: dict[str, Any] = {}
+    for attempt in range(1, V2_PREREQ_ATTEMPTS + 1):
+        snapshot_payload = rpc_post(
+            session,
+            supabase_url,
+            headers,
+            "snapshot_mlb_hit_board_predictions_v2_status",
+            {"p_target_date": game_date.isoformat()},
+            timeout=120,
+        )
+        last_payload = normalize_rpc_object(snapshot_payload)
+
+        print(
+            f"V2 prerequisite snapshot attempt {attempt}/{V2_PREREQ_ATTEMPTS}:"
+        )
+        print(json.dumps(last_payload, default=str))
+
+        status = get_pipeline_status(
+            session, supabase_url, headers, game_date
+        )
+        feature_rows = int(status.get("feature_row_count") or 0)
+        v2_rows = int(status.get("v2_prediction_row_count") or 0)
+
+        if feature_rows > 0 and v2_rows > 0:
+            print(
+                "V2 prerequisite recovery complete: "
+                f"feature_rows={feature_rows}, v2_prediction_rows={v2_rows}."
+            )
+            return status
+
+        if attempt < V2_PREREQ_ATTEMPTS:
+            print(
+                f"V2 feature source is still unavailable. Waiting "
+                f"{V2_PREREQ_RETRY_DELAY_SECONDS}s before retrying..."
+            )
+            time.sleep(V2_PREREQ_RETRY_DELAY_SECONDS)
+
+    raise RuntimeError(
+        "V3 prerequisite recovery failed. Eligible games exist, but today's "
+        "V2 snapshot / wide feature source is still missing after "
+        f"{V2_PREREQ_ATTEMPTS} attempts. "
+        f"Last snapshot response: {json.dumps(last_payload, default=str)}; "
+        f"latest pipeline status: {json.dumps(status, default=str)}"
+    )
 
 
 def fetch_refresh_runs(
@@ -299,6 +430,17 @@ def main() -> int:
     session = requests.Session()
 
     try:
+        # Critical prerequisite: enhancement-family completion alone is not
+        # sufficient. The V3 wide feature view also requires today's V2
+        # snapshot. Recover that prerequisite before an early "already complete"
+        # return can occur.
+        ensure_v2_feature_source(
+            session,
+            supabase_url,
+            headers,
+            args.game_date,
+        )
+
         baseline_rows = fetch_refresh_runs(
             session,
             supabase_url,
@@ -317,8 +459,9 @@ def main() -> int:
                         "completion_source": "preexisting_refresh_runs",
                         "game_date": args.game_date.isoformat(),
                         "message": (
-                            "All required V3 feature families are already complete; "
-                            "no refresh RPC was submitted."
+                            "The V2 prerequisite source and all required V3 "
+                            "enhancement families are already complete; no "
+                            "enhancement refresh RPC was submitted."
                         ),
                         "refresh_runs": summarize_runs(existing_runs),
                     },
@@ -347,7 +490,6 @@ def main() -> int:
                     args.game_date,
                 )
             except requests.RequestException as exc:
-                # Client/network timeouts are ambiguous: the DB may still be running.
                 ambiguous_error = exc
                 print(
                     "Refresh RPC ended with an ambiguous network error; "
@@ -428,7 +570,6 @@ def main() -> int:
                     f"({response.status_code}): {response.text}"
                 )
 
-            # 5xx/429 responses can be ambiguous; do not blindly resubmit.
             ambiguous_error = RuntimeError(
                 f"RPC returned HTTP {response.status_code}: {response.text}"
             )
