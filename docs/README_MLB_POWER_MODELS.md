@@ -469,16 +469,29 @@ For the 2+ TB target:
 actual_binary = total_bases >= 2
 ```
 
-### Current automation note
+### Automated actual synchronization
 
-The actual-sync function exists and has been validated, but it is **not currently configured as a dedicated Phase 3 cron job**.
+The HR/TB actual-sync step is now integrated directly into the existing MLB actual-finalization job.
 
-Before relying on fully automated prior-day HR/TB scorecards, this function should either:
+After prior-day MLB actuals are finalized, the same scheduled job executes:
 
-1. be added to the existing MLB actuals-finalization process, or
-2. receive its own scheduled job after games are finalized.
+```sql
+select public.sync_mlb_ml_batter_prediction_actuals(
+    ((now() at time zone 'America/New_York')::date - 1)
+);
+```
 
-This is the primary remaining operational automation gap in the Phase 3 shadow pipeline.
+It then refreshes the HR/TB pipeline status:
+
+```sql
+select public.refresh_mlb_ml_batter_pipeline_status(
+    ((now() at time zone 'America/New_York')::date - 1)
+);
+```
+
+The sync is idempotent, so the hourly finalizer can safely re-run it as late game results, corrections, or delayed data become available.
+
+This closes the prior operational gap between finalized game logs and the daily HR/TB performance scorecards.
 
 ---
 
@@ -769,18 +782,55 @@ During standard time:
 
 ---
 
-## Existing MLB actual-finalization process
+## MLB actual-finalization + power-model evaluation
 
-An existing MLB job runs:
+The existing MLB actual-finalization job now also drives HR/TB evaluation:
 
 ```text
 Job: mlb-daily-actuals-finalizer
 Cron: 20 10-15 * * *
+UTC runs: 10:20, 11:20, 12:20, 13:20, 14:20, 15:20
 ```
 
-This runs hourly during the defined UTC range and finalizes prior-day MLB actuals for the broader Hit Lab pipeline.
+Each execution now performs this ordered sequence:
 
-The new HR/TB actual-sync function should eventually be explicitly integrated into this process or scheduled directly.
+```text
+Finalize prior-day MLB actuals
+        ↓
+Sync HR/TB prediction actuals
+        ↓
+Refresh HR/TB pipeline status
+```
+
+SQL sequence:
+
+```sql
+select * from public.finalize_mlb_daily_actuals(
+    ((now() at time zone 'America/New_York')::date - 1)
+);
+
+select public.sync_mlb_ml_batter_prediction_actuals(
+    ((now() at time zone 'America/New_York')::date - 1)
+);
+
+select public.refresh_mlb_ml_batter_pipeline_status(
+    ((now() at time zone 'America/New_York')::date - 1)
+);
+```
+
+During daylight-saving time the job runs from approximately **6:20 AM through 11:20 AM Eastern**.
+
+During standard time it runs from approximately **5:20 AM through 10:20 AM Eastern**.
+
+Because the schedule includes a run at approximately **9:20 AM Eastern** in both DST and standard time, the **9:30 AM Eastern Power Models Daily Board** normally receives a freshly synchronized prior-day performance state.
+
+The repeated executions are intentional and safe because the actual-sync operation is idempotent.
+
+Deployment migration:
+
+```text
+integrate_power_actual_sync_into_daily_finalizer
+```
 
 ---
 
@@ -932,13 +982,16 @@ Pipeline status
         ↓
 Games played
         ↓
+10:20–15:20 UTC next morning, hourly
 Actual results finalized
         ↓
 HR/TB actual sync
         ↓
+Pipeline status refreshed
+        ↓
 Daily + rolling performance
         ↓
-9:30 AM Eastern next day
+9:30 AM Eastern
 BI dashboard + Sr. Data Scientist review
 ```
 
@@ -1022,27 +1075,30 @@ Secrets must never be committed to the repository.
 
 # 26. Current Status
 
-As of the completion of Phase 3B:
+As of the completion of Phase 3B and operational automation:
 
 ```text
 Phase 1 — Power features                COMPLETE
 Phase 2 — Model training/evaluation     COMPLETE
 Phase 3A — Supabase serving contract    COMPLETE
 Phase 3B — GitHub daily scorer          COMPLETE
+Prior-day actual synchronization        AUTOMATED
+Pipeline-status refresh after actuals   AUTOMATED
+Daily 9:30 AM BI monitoring             AUTOMATED
 Shadow monitoring                       READY / BEGINNING
 Frontend integration                    NOT YET ENABLED
 ```
 
 The first GitHub dry run successfully loaded the registered models and daily feature set without writing prediction rows.
 
-The next milestone is collecting live shadow predictions and evaluated results over multiple game days.
+The prior operational gap between game-log finalization and HR/TB model evaluation is now closed. The next milestone is collecting live shadow predictions and evaluated results over multiple game days.
 
 ---
 
 # 27. Recommended Next Steps
 
 1. Run the Phase 3B live scorer before games each day.
-2. Explicitly automate `sync_mlb_ml_batter_prediction_actuals()` as part of the prior-day actual-finalization flow.
+2. Monitor the automated prior-day actual sync and pipeline-status refresh during the initial shadow period.
 3. Monitor HR and TB Top 25 performance daily.
 4. Watch calibration and lift over at least 7–14 evaluated slates.
 5. Do not retrain based on one or two poor days.
