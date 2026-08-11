@@ -364,7 +364,10 @@ def score_target(run_date: str, target: str, dry_run: bool,
 
     feature_rows = fetch_feature_rows(run_date, model["raw_features"])
     game_times = fetch_game_times(run_date)
-    assert_pregame_safety(run_date, feature_rows, game_times, allow_after_start)
+    # A dry run never writes predictions, so it is safe to execute after first pitch.
+    # The pregame guard applies only to runs that will write/overwrite predictions.
+    if not dry_run:
+        assert_pregame_safety(run_date, feature_rows, game_times, allow_after_start)
 
     rows = build_prediction_rows(run_date, target, feature_rows, game_times, model)
     verify_probability_distribution(target, rows)
