@@ -1,0 +1,84 @@
+name: MLB Power Models - Daily Shadow Score
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_date:
+        description: "Optional game date (YYYY-MM-DD). Blank = today in America/New_York"
+        required: false
+        type: string
+      target:
+        description: "Target to score"
+        required: true
+        default: "all"
+        type: choice
+        options:
+          - all
+          - home_run_1plus
+          - total_bases_2plus
+      dry_run:
+        description: "Score without writing predictions"
+        required: true
+        default: false
+        type: boolean
+      allow_after_start:
+        description: "Recovery only: allow scoring after today's games have started"
+        required: true
+        default: false
+        type: boolean
+
+  # Supabase Phase 1 power features refresh at 11:45 UTC.
+  # This gives the feature refresh a 30-minute buffer.
+  schedule:
+    - cron: "15 12 * * *"
+
+concurrency:
+  group: mlb-power-model-daily-${{ github.event.inputs.run_date || 'today' }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  score-power-models:
+    name: Score HR + Total Bases shadow models
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Compile scorer
+        run: python -m py_compile scripts/score_mlb_power_models.py
+
+      - name: Score shadow models
+        shell: bash
+        run: |
+          set -euo pipefail
+          ARGS=()
+
+          if [[ -n "${{ github.event.inputs.run_date || '' }}" ]]; then
+            ARGS+=(--date "${{ github.event.inputs.run_date }}")
+          fi
+
+          ARGS+=(--target "${{ github.event.inputs.target || 'all' }}")
+
+          if [[ "${{ github.event.inputs.dry_run || 'false' }}" == "true" ]]; then
+            ARGS+=(--dry-run)
+          fi
+
+          if [[ "${{ github.event.inputs.allow_after_start || 'false' }}" == "true" ]]; then
+            ARGS+=(--allow-after-start)
+          fi
+
+          python scripts/score_mlb_power_models.py "${ARGS[@]}"
