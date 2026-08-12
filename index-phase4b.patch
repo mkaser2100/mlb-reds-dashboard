@@ -1,0 +1,8 @@
+--- a/index.html
++++ b/index.html
+@@
+-  <script src="./app-v4.js?v=model-performance-window-fix-20260807b"></script>
++  <script src="./app-v4.js?v=model-performance-window-fix-20260807b"></script>
++  <script src="./phase4b.js?v=phase4b-power-targets-20260812"></script>
+ </body>
+ </html>
