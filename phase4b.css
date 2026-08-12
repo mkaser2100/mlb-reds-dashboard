@@ -1,0 +1,107 @@
+/* MLB Hit Board Phase 4B — control layout fix
+   Keeps Outcome, Active Model, and Scope in separate layout areas.
+   Build: phase4b-layout-fix-20260812
+*/
+
+#mlbHitBoardContent .phase4b-control-deck {
+  display: grid !important;
+  grid-template-columns:
+    minmax(360px, 420px)
+    minmax(300px, 380px)
+    minmax(260px, 1fr) !important;
+  grid-template-areas: "outcome model scope";
+  align-items: end !important;
+  gap: 18px !important;
+}
+
+#mlbHitBoardContent .phase4b-control-deck .phase4b-outcome-group {
+  grid-area: outcome;
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  position: static !important;
+  inset: auto !important;
+  margin: 0 !important;
+  transform: none !important;
+}
+
+#mlbHitBoardContent .phase4b-control-deck .compact-model-group {
+  grid-area: model;
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  position: static !important;
+  inset: auto !important;
+  margin: 0 !important;
+  transform: none !important;
+}
+
+#mlbHitBoardContent .phase4b-control-deck .mlb-scope-group {
+  grid-area: scope;
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  position: static !important;
+  inset: auto !important;
+  margin: 0 !important;
+  transform: none !important;
+}
+
+#mlbHitBoardContent .phase4b-control-deck .phase4b-target-toggle {
+  width: 100% !important;
+  min-width: 0 !important;
+}
+
+#mlbHitBoardContent .phase4b-control-deck .phase4b-target-toggle .segment {
+  flex: 1 1 0 !important;
+  min-width: 0 !important;
+}
+
+#mlbHitBoardContent .phase4b-control-deck .board-model-badge {
+  position: static !important;
+  inset: auto !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  margin: 0 !important;
+  transform: none !important;
+  box-sizing: border-box !important;
+}
+
+#mlbHitBoardContent .phase4b-control-deck .board-scope-pill {
+  width: 100% !important;
+  max-width: none !important;
+  min-width: 0 !important;
+  box-sizing: border-box !important;
+  white-space: normal !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+}
+
+/* Medium widths: Outcome + Model on row 1; Scope gets full row 2. */
+@media (max-width: 1240px) {
+  #mlbHitBoardContent .phase4b-control-deck {
+    grid-template-columns: minmax(320px, 1fr) minmax(280px, 1fr) !important;
+    grid-template-areas:
+      "outcome model"
+      "scope scope";
+  }
+}
+
+/* Mobile/tablet: stack all three controls with no overlap. */
+@media (max-width: 760px) {
+  #mlbHitBoardContent .phase4b-control-deck {
+    grid-template-columns: minmax(0, 1fr) !important;
+    grid-template-areas:
+      "outcome"
+      "model"
+      "scope";
+    gap: 14px !important;
+  }
+
+  #mlbHitBoardContent .phase4b-control-deck .phase4b-target-toggle .segment {
+    padding-left: 8px !important;
+    padding-right: 8px !important;
+    font-size: 0.78rem !important;
+  }
+}
