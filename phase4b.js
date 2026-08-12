@@ -1,10 +1,10 @@
 /* =========================================================
    MLB Hit Board — Phase 4B
    Target-aware UX for 1+ Hit, 2+ Total Bases, and Home Run
-   Build: phase4b-hit-cache-20260812b
+   Build: phase4b-hit-cache-direct-serving-20260812c
    ========================================================= */
 
-console.info("MLB Hit Lab Phase 4B loaded: phase4b-hit-cache-20260812b");
+console.info("MLB Hit Lab Phase 4B loaded: phase4b-hit-cache-direct-serving-20260812c");
 
 const PHASE4B_TARGETS = {
   hit_1plus: {
@@ -120,30 +120,126 @@ function phase4bInvalidateHitState() {
   phase4bHitLoadPromise = null;
 }
 
+function phase4bAssignHitGameRanks(rows) {
+  const byGame = new Map();
+
+  (rows || []).forEach((row) => {
+    const key = String(row.game_pk || "");
+    const group = byGame.get(key) || [];
+    group.push(row);
+    byGame.set(key, group);
+  });
+
+  byGame.forEach((group) => {
+    group
+      .slice()
+      .sort((a, b) =>
+        Number(b.predicted_probability || 0) - Number(a.predicted_probability || 0) ||
+        String(a.batter_name || a.full_name || "").localeCompare(String(b.batter_name || b.full_name || ""))
+      )
+      .forEach((row, index) => {
+        row.rank_game = index + 1;
+      });
+  });
+
+  return rows;
+}
+
+async function phase4bLoadHitServingRows() {
+  const { data, error } = await client
+    .from("mlb_v3_hit_board_serving_cache")
+    .select("*")
+    .order("rank_overall", { ascending: true });
+
+  if (error) throw error;
+
+  const rows = (data || [])
+    .filter((row) =>
+      row.batter_name &&
+      row.predicted_probability !== null &&
+      row.predicted_probability !== undefined
+    )
+    .map(normalizeV3HitRow)
+    .sort((a, b) => Number(a.rank_overall || 9999) - Number(b.rank_overall || 9999));
+
+  return phase4bAssignHitGameRanks(rows);
+}
+
+async function phase4bLoadHitTargetFresh() {
+  // Critical path: use the precomputed serving table directly. The older public
+  // view performs extra computed drawer/profile work and can hit statement timeout.
+  const rows = await phase4bLoadHitServingRows();
+
+  if (!rows.length) {
+    throw new Error("V3 Hit serving cache returned no probability rows.");
+  }
+
+  mlbRows = rows;
+
+  const top = rows[0] || {};
+  v3ModelRegistry = v3ModelRegistry || {
+    target_name: "hit_1plus",
+    model_name: top.model_name || "V3 ML",
+    model_version: top.model_version || null,
+    status: top.model_status || "candidate"
+  };
+
+  // Paint the board immediately with real V3 probabilities.
+  renderMlbHitBoardPage();
+  phase4bSnapshotHitState();
+
+  // Secondary context should never block or replace the probability board.
+  Promise.allSettled([
+    loadV2Enhancements(),
+    loadBoardOddsRows()
+  ]).then(async ([v2Result, oddsResult]) => {
+    if (v2Result.status === "fulfilled") {
+      mlbV2EnhancementRows = v2Result.value || [];
+      mlbRows = withMlbConsensusRanks(mergeV2Enhancements(mlbRows, mlbV2EnhancementRows));
+    }
+
+    if (oddsResult.status === "fulfilled") {
+      boardOddsRows = oddsResult.value || boardOddsRows || [];
+    }
+
+    const targetPitcher = mlbBestTargetPitcher();
+    try {
+      await loadMlbTargetPitcherSplits(targetPitcher?.pitcher_id);
+    } catch (err) {
+      console.warn("Non-blocking Hit pitcher context failed:", err);
+    }
+
+    if (phase4bIsHit()) {
+      renderMlbHitBoardPage();
+    }
+
+    phase4bSnapshotHitState();
+  }).catch((err) => {
+    console.warn("Non-blocking Hit enrichment failed:", err);
+  });
+
+  return rows;
+}
+
 async function phase4bLoadHitTarget() {
-  // Fast path after the first successful Hit load in this page session.
   if (phase4bRestoreHitState()) {
     renderMlbHitBoardPage();
     return mlbRows;
   }
 
-  // Avoid duplicate initial Hit loads during startup / rapid clicks.
   if (phase4bHitLoadPromise) {
     return phase4bHitLoadPromise;
   }
 
-  phase4bHitLoadPromise = (async () => {
-    await phase4bOriginal.loadMlbHitBoardData();
-
-    if (Array.isArray(mlbRows) && mlbRows.length) {
-      phase4bSnapshotHitState();
-    }
-
-    return mlbRows;
-  })();
+  phase4bHitLoadPromise = phase4bLoadHitTargetFresh();
 
   try {
     return await phase4bHitLoadPromise;
+  } catch (err) {
+    console.error("Error loading direct V3 Hit serving cache:", err);
+    mlbRows = [];
+    renderMlbHitBoardPage(err);
+    throw err;
   } finally {
     phase4bHitLoadPromise = null;
   }
