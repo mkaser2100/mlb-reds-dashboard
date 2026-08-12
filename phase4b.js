@@ -1,10 +1,10 @@
 /* =========================================================
    MLB Hit Board — Phase 4B
    Target-aware UX for 1+ Hit, 2+ Total Bases, and Home Run
-   Build: phase4b-power-targets-20260812
+   Build: phase4b-hit-cache-20260812b
    ========================================================= */
 
-console.info("MLB Hit Lab Phase 4B loaded: phase4b-power-targets-20260812");
+console.info("MLB Hit Lab Phase 4B loaded: phase4b-hit-cache-20260812b");
 
 const PHASE4B_TARGETS = {
   hit_1plus: {
@@ -60,6 +60,94 @@ let selectedMlbPredictionTarget =
     : "hit_1plus";
 
 const phase4bTargetCache = new Map();
+
+// V3 Hit uses a richer loader than the two power targets. Preserve the
+// completed Hit state in memory so returning from HR/TB can repaint
+// immediately instead of repeating the full Supabase request set.
+let phase4bHitStateCache = null;
+let phase4bHitLoadPromise = null;
+
+function phase4bCloneRows(rows) {
+  return Array.isArray(rows) ? rows.slice() : [];
+}
+
+function phase4bCloneObject(value) {
+  return value && typeof value === "object" ? { ...value } : value;
+}
+
+function phase4bSnapshotHitState() {
+  if (!Array.isArray(mlbRows) || !mlbRows.length) return null;
+
+  phase4bHitStateCache = {
+    rows: phase4bCloneRows(mlbRows),
+    v2Enhancements: phase4bCloneRows(mlbV2EnhancementRows),
+    pitcherSplits: phase4bCloneObject(mlbTargetPitcherSplits) || {},
+    modelRegistry: v3ModelRegistry || null,
+    actualsStatus: v3ActualsStatus || null,
+    performanceRows: phase4bCloneRows(v3PerformanceRows),
+    boardOdds: phase4bCloneRows(boardOddsRows),
+    drawerExplanations: phase4bCloneRows(v3DrawerExplanationRows),
+    cachedAt: Date.now()
+  };
+
+  console.info("Phase 4B Hit state cached", {
+    rows: phase4bHitStateCache.rows.length,
+    odds: phase4bHitStateCache.boardOdds.length,
+    cachedAt: new Date(phase4bHitStateCache.cachedAt).toISOString()
+  });
+
+  return phase4bHitStateCache;
+}
+
+function phase4bRestoreHitState() {
+  const cache = phase4bHitStateCache;
+  if (!cache?.rows?.length) return false;
+
+  mlbRows = phase4bCloneRows(cache.rows);
+  mlbV2EnhancementRows = phase4bCloneRows(cache.v2Enhancements);
+  mlbTargetPitcherSplits = phase4bCloneObject(cache.pitcherSplits) || {};
+  v3ModelRegistry = cache.modelRegistry || null;
+  v3ActualsStatus = cache.actualsStatus || null;
+  v3PerformanceRows = phase4bCloneRows(cache.performanceRows);
+  boardOddsRows = phase4bCloneRows(cache.boardOdds);
+  v3DrawerExplanationRows = phase4bCloneRows(cache.drawerExplanations);
+
+  return true;
+}
+
+function phase4bInvalidateHitState() {
+  phase4bHitStateCache = null;
+  phase4bHitLoadPromise = null;
+}
+
+async function phase4bLoadHitTarget() {
+  // Fast path after the first successful Hit load in this page session.
+  if (phase4bRestoreHitState()) {
+    renderMlbHitBoardPage();
+    return mlbRows;
+  }
+
+  // Avoid duplicate initial Hit loads during startup / rapid clicks.
+  if (phase4bHitLoadPromise) {
+    return phase4bHitLoadPromise;
+  }
+
+  phase4bHitLoadPromise = (async () => {
+    await phase4bOriginal.loadMlbHitBoardData();
+
+    if (Array.isArray(mlbRows) && mlbRows.length) {
+      phase4bSnapshotHitState();
+    }
+
+    return mlbRows;
+  })();
+
+  try {
+    return await phase4bHitLoadPromise;
+  } finally {
+    phase4bHitLoadPromise = null;
+  }
+}
 
 const phase4bOriginal = {
   loadMlbHitBoardData,
@@ -276,7 +364,7 @@ async function phase4bLoadPowerTarget(target) {
 
 loadMlbHitBoardData = async function loadMlbHitBoardDataPhase4b() {
   if (phase4bIsHit()) {
-    return phase4bOriginal.loadMlbHitBoardData();
+    return phase4bLoadHitTarget();
   }
 
   const config = phase4bConfig();
@@ -822,6 +910,15 @@ document.addEventListener("click", (event) => {
 
 window.phase4bSetTarget = phase4bSetTarget;
 window.runPhase4bSelfTest = runPhase4bSelfTest;
+window.phase4bInvalidateHitState = phase4bInvalidateHitState;
+
+// Manual Refresh should always bypass the in-memory Hit cache.
+// Capture phase ensures this runs before the app's existing refresh handler.
+document.getElementById("refreshButton")?.addEventListener("click", () => {
+  if (phase4bIsHit()) {
+    phase4bInvalidateHitState();
+  }
+}, true);
 
 phase4bInjectStyles();
 phase4bUpdatePageHeader();
