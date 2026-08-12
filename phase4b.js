@@ -1,10 +1,10 @@
 /* =========================================================
    MLB Hit Board — Phase 4B
    Target-aware UX for 1+ Hit, 2+ Total Bases, and Home Run
-   Build: phase4b-hit-cache-direct-serving-20260812c
+   Build: phase4b-drawer-profile-sample-fix-20260812d
    ========================================================= */
 
-console.info("MLB Hit Lab Phase 4B loaded: phase4b-hit-cache-direct-serving-20260812c");
+console.info("MLB Hit Lab Phase 4B loaded: phase4b-drawer-profile-sample-fix-20260812d");
 
 const PHASE4B_TARGETS = {
   hit_1plus: {
@@ -267,6 +267,7 @@ function phase4bFeature(row, key, fallback = null) {
 }
 
 function phase4bPct(value, digits = 1) {
+  if (value === null || value === undefined || value === "") return "—";
   const n = Number(value);
   if (!Number.isFinite(n)) return "—";
   const pct = Math.abs(n) <= 1 ? n * 100 : n;
@@ -538,6 +539,31 @@ function phase4bAverageFeature(rows, key) {
   return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
 
+function phase4bReliablePitcherContactRate(rows, rateKey, minBbe = 25) {
+  const uniqueSamples = new Map();
+
+  (rows || []).forEach((row) => {
+    const f = row?.features || {};
+    const rate = Number(f[rateKey]);
+    const bbe = Number(f.pitcher_contact_bbe_30d);
+    const available = f.contact_feature_available;
+
+    if (!Number.isFinite(rate) || !Number.isFinite(bbe)) return;
+    if (available === false || bbe < minBbe) return;
+
+    const key = `${rate}|${bbe}`;
+    if (!uniqueSamples.has(key)) uniqueSamples.set(key, { rate, bbe });
+  });
+
+  const samples = [...uniqueSamples.values()];
+  if (!samples.length) return null;
+
+  const totalBbe = samples.reduce((sum, sample) => sum + sample.bbe, 0);
+  if (!totalBbe) return null;
+
+  return samples.reduce((sum, sample) => sum + (sample.rate * sample.bbe), 0) / totalBbe;
+}
+
 function phase4bRenderOutlook(rows) {
   const config = phase4bConfig();
   const top = rows.slice(0, 3);
@@ -595,8 +621,8 @@ function phase4bRenderMatchupCard(rows) {
   }
 
   const sample = matchup.hitters;
-  const pitcherBarrel = phase4bAverageFeature(sample, "pitcher_barrel_rate_allowed_30d");
-  const pitcherHardHit = phase4bAverageFeature(sample, "pitcher_hard_hit_rate_allowed_30d");
+  const pitcherBarrel = phase4bReliablePitcherContactRate(sample, "pitcher_barrel_rate_allowed_30d");
+  const pitcherHardHit = phase4bReliablePitcherContactRate(sample, "pitcher_hard_hit_rate_allowed_30d");
   const parkKey = selectedMlbPredictionTarget === "home_run_1plus" ? "park_hr_factor" : "park_hit_factor";
   const parkFactor = phase4bAverageFeature(sample, parkKey);
   const facingTeam = matchup.hitters[0]?.team_name || "Opponent hitters";
@@ -849,8 +875,34 @@ function phase4bOpenPowerDrawer(row) {
   $("drawerBackdrop")?.classList.add("open");
 }
 
-openMlbDrawer = function openMlbDrawerPhase4b(playerId) {
+async function phase4bLoadComparableProfileForRow(row) {
+  if (!row?.prediction_id) return row;
+  if (row.comparable_profile_status) return row;
+
+  try {
+    const { data, error } = await client
+      .from("mlb_v3_comparable_profile_cache")
+      .select("prediction_id,comparable_profile_rate,comparable_profile_delta,comparable_profile_sample_size,comparable_profile_effective_sample_size,comparable_profile_average_distance,comparable_profile_sample_label,comparable_profile_status,comparable_profile_method_version")
+      .eq("prediction_id", row.prediction_id)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!data) return row;
+
+    Object.assign(row, data);
+    return row;
+  } catch (err) {
+    console.warn("Comparable profile lazy load failed:", err);
+    return row;
+  }
+}
+
+openMlbDrawer = async function openMlbDrawerPhase4b(playerId) {
   if (phase4bIsHit()) {
+    const row = (mlbRows || []).find((item) => String(item.player_id) === String(playerId));
+    if (row) {
+      await phase4bLoadComparableProfileForRow(row);
+    }
     return phase4bOriginal.openMlbDrawer(playerId);
   }
 
