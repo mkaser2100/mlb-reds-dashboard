@@ -1,120 +1,230 @@
 /* =========================================================
-   MLB Hit Board — Phase 5B board-scope controls
-   Build: phase5b-board-scope-20260812
+   MLB Hit Board — Phase 5B compact unified controls
+   Replaces the stacked Outcome / Scope cards with one control card.
+   Build: phase5b-compact-controls-20260812b
    ========================================================= */
 
-#mlbHitBoardContent .phase5b-scope-card {
-  margin: 16px 0 0;
-  padding: 20px 22px;
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  border-radius: 22px;
+#mlbHitBoardContent .phase5b-unified-control-card {
+  margin: 12px 0 0;
+  padding: 13px 14px;
+  border: 1px solid rgba(148, 163, 184, 0.17);
+  border-radius: 18px;
   background:
-    linear-gradient(180deg, rgba(30, 41, 59, 0.70), rgba(15, 23, 42, 0.70));
+    linear-gradient(180deg, rgba(30, 41, 59, 0.68), rgba(15, 23, 42, 0.68));
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
 }
 
-#mlbHitBoardContent .phase5b-scope-row {
+#mlbHitBoardContent .phase5b-unified-control-row {
   display: grid;
-  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
-  gap: 20px;
-  align-items: end;
+  grid-template-columns:
+    minmax(360px, 1.35fr)
+    minmax(220px, 0.72fr)
+    minmax(285px, 0.95fr);
+  gap: 12px;
+  align-items: center;
 }
 
+#mlbHitBoardContent .phase5b-unified-control-card .segmented {
+  min-height: 46px;
+  padding: 3px;
+  border-radius: 14px;
+}
+
+#mlbHitBoardContent .phase5b-unified-control-card .segment {
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 11px;
+  font-size: 0.88rem;
+  line-height: 1;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+#mlbHitBoardContent .phase5b-outcome-toggle,
 #mlbHitBoardContent .phase5b-scope-toggle {
   width: 100%;
 }
 
+#mlbHitBoardContent .phase5b-outcome-toggle .segment,
 #mlbHitBoardContent .phase5b-scope-toggle .segment {
   flex: 1 1 0;
   min-width: 0;
 }
 
-#mlbHitBoardContent .phase5b-game-group {
+#mlbHitBoardContent .phase5b-model-badge {
+  position: static !important;
+  inset: auto !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  min-height: 46px;
+  margin: 0 !important;
+  padding: 7px 10px !important;
+  transform: none !important;
+  box-sizing: border-box;
+  border-radius: 14px;
+}
+
+#mlbHitBoardContent .phase5b-model-badge .board-model-icon {
+  width: 28px;
+  height: 28px;
+  font-size: 0.92rem;
+}
+
+#mlbHitBoardContent .phase5b-model-badge .board-model-copy {
   min-width: 0;
+}
+
+#mlbHitBoardContent .phase5b-model-badge .board-model-copy small {
+  font-size: 0.58rem;
+  line-height: 1;
+  letter-spacing: 0.14em;
+}
+
+#mlbHitBoardContent .phase5b-model-badge .board-model-copy strong {
+  margin-top: 2px;
+  font-size: 0.82rem;
+  line-height: 1.05;
+}
+
+#mlbHitBoardContent .phase5b-model-badge .board-model-status {
+  padding: 4px 8px;
+  font-size: 0.64rem;
+  letter-spacing: 0.08em;
+}
+
+#mlbHitBoardContent .phase5b-game-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(148, 163, 184, 0.10);
 }
 
 #mlbHitBoardContent .phase5b-game-select {
   width: 100%;
-  min-height: 52px;
-  padding: 0 46px 0 16px;
-  border: 1px solid rgba(96, 165, 250, 0.32);
-  border-radius: 16px;
+  min-width: 0;
+  min-height: 42px;
+  padding: 0 40px 0 13px;
+  border: 1px solid rgba(96, 165, 250, 0.30);
+  border-radius: 12px;
   background: rgba(8, 15, 35, 0.78);
   color: var(--text, #f8fafc);
   font: inherit;
-  font-weight: 800;
+  font-size: 0.84rem;
+  font-weight: 750;
   cursor: pointer;
   outline: none;
 }
 
 #mlbHitBoardContent .phase5b-game-select:focus {
   border-color: rgba(56, 189, 248, 0.72);
-  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.10);
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.08);
 }
 
 #mlbHitBoardContent .phase5b-game-meta {
-  margin-top: 7px;
   color: var(--muted, #94a3b8);
-  font-size: 0.78rem;
-  line-height: 1.35;
+  font-size: 0.70rem;
+  line-height: 1.2;
+  white-space: nowrap;
 }
 
 #mlbHitBoardContent .phase5b-game-loading {
-  min-height: 52px;
+  min-height: 42px;
   display: flex;
   align-items: center;
-  padding: 0 16px;
-  border: 1px solid rgba(148, 163, 184, 0.16);
-  border-radius: 16px;
-  color: var(--muted, #94a3b8);
-  background: rgba(8, 15, 35, 0.55);
-}
-
-#mlbHitBoardContent .phase5b-scope-summary {
-  min-height: 52px;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 2px;
-  padding: 0 16px;
+  padding: 0 13px;
   border: 1px solid rgba(148, 163, 184, 0.14);
-  border-radius: 16px;
-  background: rgba(8, 15, 35, 0.42);
-}
-
-#mlbHitBoardContent .phase5b-scope-summary span {
+  border-radius: 12px;
   color: var(--muted, #94a3b8);
-  font-size: 0.74rem;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-  font-weight: 800;
+  background: rgba(8, 15, 35, 0.50);
+  font-size: 0.80rem;
 }
 
-#mlbHitBoardContent .phase5b-scope-summary strong {
-  color: var(--text, #f8fafc);
-  font-size: 0.92rem;
+/* Remove legacy stacked control-deck spacing if older Phase 4B CSS is present. */
+#mlbHitBoardContent .phase4b-control-deck,
+#mlbHitBoardContent .phase5b-scope-card {
+  display: none !important;
 }
 
-@media (max-width: 900px) {
-  #mlbHitBoardContent .phase5b-scope-row {
+/* The rest of the MLB board already has good visual hierarchy.
+   Only tighten the top header slightly so the compact controls connect
+   more naturally to the content below. */
+#mlbView + * {
+  --phase5b-compact-ui: 1;
+}
+
+@media (max-width: 1180px) {
+  #mlbHitBoardContent .phase5b-unified-control-row {
+    grid-template-columns: minmax(320px, 1.15fr) minmax(210px, 0.72fr);
+    grid-template-areas:
+      "outcome scope"
+      "model model";
+  }
+
+  #mlbHitBoardContent .phase5b-outcome-toggle {
+    grid-area: outcome;
+  }
+
+  #mlbHitBoardContent .phase5b-scope-toggle {
+    grid-area: scope;
+  }
+
+  #mlbHitBoardContent .phase5b-model-badge {
+    grid-area: model;
+    max-width: 420px !important;
+  }
+}
+
+@media (max-width: 720px) {
+  #mlbHitBoardContent .phase5b-unified-control-card {
+    padding: 11px;
+    border-radius: 16px;
+  }
+
+  #mlbHitBoardContent .phase5b-unified-control-row {
     grid-template-columns: 1fr;
-    gap: 14px;
+    grid-template-areas:
+      "outcome"
+      "scope"
+      "model";
+    gap: 8px;
+  }
+
+  #mlbHitBoardContent .phase5b-unified-control-card .segmented {
+    min-height: 42px;
+  }
+
+  #mlbHitBoardContent .phase5b-unified-control-card .segment {
+    min-height: 36px;
+    padding: 0 8px;
+    font-size: 0.78rem;
+  }
+
+  #mlbHitBoardContent .phase5b-model-badge {
+    max-width: none !important;
+  }
+
+  #mlbHitBoardContent .phase5b-game-row {
+    grid-template-columns: 1fr;
+    gap: 5px;
+    margin-top: 8px;
+    padding-top: 8px;
+  }
+
+  #mlbHitBoardContent .phase5b-game-meta {
+    white-space: normal;
+    padding-left: 2px;
   }
 }
 
-@media (max-width: 560px) {
-  #mlbHitBoardContent .phase5b-scope-card {
-    padding: 16px;
-    border-radius: 18px;
+@media (max-width: 430px) {
+  #mlbHitBoardContent .phase5b-unified-control-card .segment {
+    font-size: 0.72rem;
   }
 
-  #mlbHitBoardContent .phase5b-scope-toggle .segment {
-    padding-left: 8px;
-    padding-right: 8px;
-    font-size: 0.82rem;
-  }
-
-  #mlbHitBoardContent .phase5b-game-select {
-    font-size: 0.85rem;
+  #mlbHitBoardContent .phase5b-model-badge .board-model-copy strong {
+    font-size: 0.78rem;
   }
 }

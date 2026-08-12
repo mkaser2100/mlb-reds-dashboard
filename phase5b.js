@@ -2,10 +2,10 @@
    MLB Hit Board — Phase 5B
    Merge foundation: Top 25 / Select Game scope on MLB Hit Board
    Team Hit Board remains untouched during parity validation.
-   Build: phase5b-board-scope-20260812
+   Build: phase5b-compact-controls-20260812b
    ========================================================= */
 
-console.info("MLB Hit Lab Phase 5B loaded: phase5b-board-scope-20260812");
+console.info("MLB Hit Lab Phase 5B loaded: phase5b-compact-controls-20260812b");
 
 const PHASE5B_SCOPE_TOP25 = "top25";
 const PHASE5B_SCOPE_GAME = "game";
@@ -93,80 +93,94 @@ function phase5bFormatGameOption(game) {
     `${game.away_team_name || "Away"} at ${game.home_team_name || "Home"}`;
 }
 
-function phase5bScopeControls() {
+function phase5bUnifiedControls() {
   const config = phase4bConfig();
   const games = phase5bAvailableGames();
   const selected = phase5bEnsureSelectedGame();
   const countField = phase5bTargetCountField();
 
   return `
-    <section class="phase5b-scope-card" aria-label="MLB board scope">
-      <div class="phase5b-scope-row">
-        <div class="control-group phase5b-scope-toggle-group">
-          <div class="control-label">Board Scope</div>
-          <div class="segmented phase5b-scope-toggle" role="group" aria-label="Board scope">
+    <section class="phase5b-unified-control-card" aria-label="MLB board filters">
+      <div class="phase5b-unified-control-row">
+        <div class="segmented phase5b-outcome-toggle" role="group" aria-label="Prediction outcome">
+          ${Object.values(PHASE4B_TARGETS).map((target) => `
             <button
-              class="segment ${selectedMlbBoardScope === PHASE5B_SCOPE_TOP25 ? "active" : ""}"
+              class="segment ${selectedMlbPredictionTarget === target.key ? "active" : ""}"
               type="button"
-              data-phase5b-scope="${PHASE5B_SCOPE_TOP25}"
-              aria-pressed="${selectedMlbBoardScope === PHASE5B_SCOPE_TOP25}"
-            >Top 25</button>
-            <button
-              class="segment ${selectedMlbBoardScope === PHASE5B_SCOPE_GAME ? "active" : ""}"
-              type="button"
-              data-phase5b-scope="${PHASE5B_SCOPE_GAME}"
-              aria-pressed="${selectedMlbBoardScope === PHASE5B_SCOPE_GAME}"
-            >Select Game</button>
-          </div>
+              data-phase4b-target="${escapeHtml(target.key)}"
+              aria-pressed="${selectedMlbPredictionTarget === target.key}"
+              aria-label="${escapeHtml(target.fullLabel)}"
+            >${escapeHtml(target.shortLabel)}</button>
+          `).join("")}
         </div>
 
-        ${selectedMlbBoardScope === PHASE5B_SCOPE_GAME ? `
-          <div class="control-group phase5b-game-group">
-            <div class="control-label">Game</div>
-            ${phase5bGamesLoading && !phase5bGamesLoaded ? `
-              <div class="phase5b-game-loading">Loading today's MLB games…</div>
-            ` : games.length ? `
-              <select
-                class="phase5b-game-select"
-                id="phase5bGameSelect"
-                aria-label="Select MLB game"
-              >
-                ${games.map((game) => `
-                  <option
-                    value="${escapeHtml(game.game_pk)}"
-                    ${String(game.game_pk) === String(selected?.game_pk) ? "selected" : ""}
-                  >
-                    ${escapeHtml(phase5bFormatGameOption(game))}
-                  </option>
-                `).join("")}
-              </select>
-              <div class="phase5b-game-meta">
-                ${selected ? `
-                  ${escapeHtml(config.fullLabel)} ·
-                  ${escapeHtml(fmtNum(selected[countField] || 0))} scored hitters
-                  ${selected.venue_name ? ` · ${escapeHtml(selected.venue_name)}` : ""}
-                ` : ""}
-              </div>
-            ` : `
-              <div class="phase5b-game-loading">No games with ${escapeHtml(config.fullLabel)} predictions are available.</div>
-            `}
-          </div>
-        ` : `
-          <div class="phase5b-scope-summary">
-            <span>League-wide</span>
-            <strong>Top 25 by ${escapeHtml(config.fullLabel)} probability</strong>
-          </div>
-        `}
+        <div class="segmented phase5b-scope-toggle" role="group" aria-label="Board scope">
+          <button
+            class="segment ${selectedMlbBoardScope === PHASE5B_SCOPE_TOP25 ? "active" : ""}"
+            type="button"
+            data-phase5b-scope="${PHASE5B_SCOPE_TOP25}"
+            aria-pressed="${selectedMlbBoardScope === PHASE5B_SCOPE_TOP25}"
+          >Top 25</button>
+          <button
+            class="segment ${selectedMlbBoardScope === PHASE5B_SCOPE_GAME ? "active" : ""}"
+            type="button"
+            data-phase5b-scope="${PHASE5B_SCOPE_GAME}"
+            aria-pressed="${selectedMlbBoardScope === PHASE5B_SCOPE_GAME}"
+          >Select Game</button>
+        </div>
+
+        <div class="board-model-badge phase5b-model-badge" aria-label="Active prediction model">
+          <span class="board-model-icon">${phase4bIsHit() ? "⭐" : "🧠"}</span>
+          <span class="board-model-copy">
+            <small>Active Model</small>
+            <strong>${escapeHtml(config.modelLabel)}</strong>
+          </span>
+          <span class="board-model-status ${config.deploymentStatus === "shadow" ? "phase4b-shadow-status" : ""}">
+            ${escapeHtml(config.deploymentLabel)}
+          </span>
+        </div>
       </div>
+
+      ${selectedMlbBoardScope === PHASE5B_SCOPE_GAME ? `
+        <div class="phase5b-game-row">
+          ${phase5bGamesLoading && !phase5bGamesLoaded ? `
+            <div class="phase5b-game-loading">Loading today's MLB games…</div>
+          ` : games.length ? `
+            <select
+              class="phase5b-game-select"
+              id="phase5bGameSelect"
+              aria-label="Select MLB game"
+            >
+              ${games.map((game) => `
+                <option
+                  value="${escapeHtml(game.game_pk)}"
+                  ${String(game.game_pk) === String(selected?.game_pk) ? "selected" : ""}
+                >
+                  ${escapeHtml(phase5bFormatGameOption(game))}
+                </option>
+              `).join("")}
+            </select>
+
+            ${selected ? `
+              <div class="phase5b-game-meta">
+                ${escapeHtml(fmtNum(selected[countField] || 0))} scored ·
+                ${escapeHtml(config.fullLabel)}
+                ${selected.venue_name ? ` · ${escapeHtml(selected.venue_name)}` : ""}
+              </div>
+            ` : ""}
+          ` : `
+            <div class="phase5b-game-loading">
+              No games with ${escapeHtml(config.fullLabel)} predictions are available.
+            </div>
+          `}
+        </div>
+      ` : ""}
     </section>
   `;
 }
 
 renderMlbPredictionModeControls = function renderMlbPredictionModeControlsPhase5b() {
-  return `
-    ${phase5bPrevious.renderMlbPredictionModeControls()}
-    ${phase5bScopeControls()}
-  `;
+  return phase5bUnifiedControls();
 };
 
 async function phase5bLoadGames(force = false) {
