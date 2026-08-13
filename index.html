@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>MLB Hit Lab</title>
+  <!-- unified-frontend-consolidation-20260812 -->
+
+  <link rel="stylesheet" href="styles.css?v=reds-cleanup-release-4b-4c" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+
+<body>
+  <div class="app-layout">
+    <aside class="sidebar">
+      <div class="sidebar-top">
+        <div class="brand">
+          <div class="brand-mark">M</div>
+          <div class="brand-copy">
+            <div class="brand-title">MLB Hit Lab</div>
+            <div class="brand-subtitle">Hitter Intelligence</div>
+          </div>
+        </div>
+
+        <button class="sidebar-toggle" id="sidebarToggle" type="button" aria-label="Collapse sidebar" aria-expanded="true" title="Collapse menu">
+          <span id="sidebarToggleIcon">☰</span>
+        </button>
+      </div>
+
+      <nav class="nav">
+        <button class="nav-item active" type="button" data-view="mlb">
+          <span class="nav-icon">🔥</span>
+          <span class="nav-label">MLB Hit Board</span>
+        </button>
+
+        <button class="nav-item" type="button" data-view="market">
+          <span class="nav-icon">⭐</span>
+          <span class="nav-label">Market Edge</span>
+        </button>
+
+        <button class="nav-item" type="button" data-view="performance">
+          <span class="nav-icon">📊</span>
+          <span class="nav-label">Model Performance</span>
+        </button>
+</nav>
+
+      <div class="sidebar-card">
+        <div class="mini-label">Model</div>
+        <div class="mini-title">ML Prediction</div>
+        <p>
+          V3 Hit is live for 1+ Hit. Home Run and 2+ Total Bases run as shadow models while live performance is evaluated.
+        </p>
+      </div>
+
+      <div class="sidebar-card subtle">
+        <div class="mini-label">Player Details</div>
+        <div class="mini-title">Click Any Row</div>
+        <p>
+          Open any player to review target probability, matchup context, and model signals.
+        </p>
+      </div>
+
+      <div class="sidebar-footer">
+        <div class="mini-label">Stack</div>
+        <div>GitHub Pages</div>
+        <div>Supabase</div>
+        <div>MLB Game Logs</div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div>
+          <div class="eyebrow" id="pageEyebrow">All MLB · Daily Matchup Intelligence</div>
+          <h1 id="pageTitle">MLB Hit Board</h1>
+          <p class="page-subtitle" id="pageSubtitle">Top hitters across MLB by V3 machine-learning hit probability.</p>
+        </div>
+
+        <div class="topbar-actions">
+          <div class="live-pill">
+            <span class="pulse"></span>
+            Live Supabase Feed
+          </div>
+          <button class="refresh-button" id="refreshButton" type="button">Refresh</button>
+        </div>
+      </header>
+
+      <section id="marketEdgeView" class="view">
+        <div id="marketEdgeContent">
+          <section class="performance-note">
+            <strong>Loading Market Edge...</strong>
+            <span>Comparing V3 model probabilities to hit prop market prices.</span>
+          </section>
+        </div>
+      </section>
+
+      <section id="mlbView" class="view active-view">
+        <div id="mlbHitBoardContent">
+          <section class="performance-note">
+            <strong>Loading MLB Hit Board...</strong>
+            <span>Top hitters across MLB by V3 machine-learning hit probability.</span>
+          </section>
+        </div>
+      </section>
+
+      <section id="performanceView" class="view">
+        <div id="performanceContent">
+          <section class="performance-note">
+            <strong>Loading MLB Model Performance...</strong>
+            <span>Loading the redesigned four-card model performance page from Supabase.</span>
+          </section>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <div class="drawer-backdrop" id="drawerBackdrop"></div>
+
+  <aside class="player-drawer" id="playerDrawer" aria-hidden="true">
+    <div class="drawer-header">
+      <div>
+        <div class="eyebrow">Player Detail</div>
+        <h2 id="drawerPlayerName">—</h2>
+        <p id="drawerPlayerSub">Recent form, matchup, and season splits</p>
+      </div>
+
+      <button class="drawer-close" id="drawerClose" type="button">×</button>
+    </div>
+
+    <div class="drawer-body">
+      <section class="drawer-section">
+        <div class="drawer-section-title">Today’s Matchup</div>
+
+        <div class="drawer-metric-grid">
+          <div class="drawer-metric">
+            <span>Matchup Score</span>
+            <strong id="drawerMatchupScore">—</strong>
+          </div>
+          <div class="drawer-metric">
+            <span>V2 Pick Score</span>
+            <strong id="drawerV2PickScore">—</strong>
+          </div>
+          <div class="drawer-metric">
+            <span>Pitcher</span>
+            <strong id="drawerPitcher">—</strong>
+          </div>
+        </div>
+
+        <p id="drawerMatchupExplanation" class="drawer-explanation"></p>
+        <div class="score-breakdown">
+  <div class="drawer-section-title small-title">Why This Score?</div>
+  <div id="drawerScoreBreakdown"></div>
+
+  <div class="weighting-box">
+    <strong>Model Weights</strong>
+    <div>40% Recent Form · Last selected game window</div>
+    <div>35% Batter Split · AVG vs pitcher hand</div>
+    <div>20% Pitcher Vulnerability · AVG allowed vs batter side</div>
+    <div>5% Pitcher Recent Form · Last 5 starts</div>
+  </div>
+</div>
+      </section>
+
+      <section class="drawer-section">
+        <div class="drawer-section-title">Recent Form</div>
+        <div class="drawer-metric-grid">
+          <div class="drawer-metric">
+            <span>Hot Score</span>
+            <strong id="drawerHotScore">—</strong>
+          </div>
+          <div class="drawer-metric">
+            <span>AVG</span>
+            <strong id="drawerAvg">—</strong>
+          </div>
+          <div class="drawer-metric">
+            <span>Hit Rate</span>
+            <strong id="drawerHitRate">—</strong>
+          </div>
+          <div class="drawer-metric">
+            <span>Streak</span>
+            <strong id="drawerStreak">—</strong>
+          </div>
+        </div>
+      </section>
+
+      <section class="drawer-section">
+        <div class="drawer-section-title">Production</div>
+        <div class="drawer-list">
+          <div><span>AB</span><strong id="drawerAb">—</strong></div>
+          <div><span>Hits</span><strong id="drawerHits">—</strong></div>
+          <div><span>HR</span><strong id="drawerHr">—</strong></div>
+          <div><span>RBI</span><strong id="drawerRbi">—</strong></div>
+          <div><span>BB</span><strong id="drawerBb">—</strong></div>
+          <div><span>SB</span><strong id="drawerSb">—</strong></div>
+        </div>
+      </section>
+
+      <section class="drawer-section">
+        <div class="drawer-section-title">Season Splits</div>
+        <div class="drawer-splits-grid">
+          <div class="split-tile">
+            <span>vs LHP</span>
+            <strong id="drawerLhpAvg">—</strong>
+            <small id="drawerLhpAb">— AB</small>
+          </div>
+          <div class="split-tile">
+            <span>vs RHP</span>
+            <strong id="drawerRhpAvg">—</strong>
+            <small id="drawerRhpAb">— AB</small>
+          </div>
+          <div class="split-tile">
+            <span>Home</span>
+            <strong id="drawerHomeAvg">—</strong>
+            <small id="drawerHomeAb">— AB</small>
+          </div>
+          <div class="split-tile">
+            <span>Away</span>
+            <strong id="drawerAwayAvg">—</strong>
+            <small id="drawerAwayAb">— AB</small>
+          </div>
+          <div class="split-tile">
+            <span>Day</span>
+            <strong id="drawerDayAvg">—</strong>
+            <small id="drawerDayAb">— AB</small>
+          </div>
+          <div class="split-tile">
+            <span>Night</span>
+            <strong id="drawerNightAvg">—</strong>
+            <small id="drawerNightAb">— AB</small>
+          </div>
+        </div>
+      </section>
+    </div>
+  </aside>
+
+  <script src="./app-v4.js?v=unified-frontend-consolidation-20260812"></script>
+</body>
+</html>
