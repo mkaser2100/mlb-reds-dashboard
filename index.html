@@ -38,11 +38,6 @@
           <span class="nav-label">MLB Hit Board</span>
         </button>
 
-        <button class="nav-item" type="button" data-view="hot">
-          <span class="nav-icon">⚾</span>
-          <span class="nav-label">Team Hit Board</span>
-        </button>
-
         <button class="nav-item" type="button" data-view="market">
           <span class="nav-icon">⭐</span>
           <span class="nav-label">Market Edge</span>
@@ -58,7 +53,7 @@
         <div class="mini-label">Model</div>
         <div class="mini-title">ML Prediction</div>
         <p>
-          V3 is the sole recommendation model across the hit boards, while V1 and V2 remain available on Model Performance for benchmarking.
+          V3 Hit is live for 1+ Hit. Home Run and 2+ Total Bases run as shadow models while live performance is evaluated.
         </p>
       </div>
 
@@ -66,7 +61,7 @@
         <div class="mini-label">Player Details</div>
         <div class="mini-title">Click Any Row</div>
         <p>
-          Open the detail drawer to view hit probability, matchup context, and model explanation.
+          Open any player to review target probability, matchup context, and model signals.
         </p>
       </div>
 
@@ -94,147 +89,6 @@
           <button class="refresh-button" id="refreshButton" type="button">Refresh</button>
         </div>
       </header>
-
-      <section id="hotView" class="view">
-        <div id="teamGameSelectorMount"></div>
-
-        <section id="matchupHero" class="matchup-hero">
-          <div class="matchup-header">
-            <div>
-              <div class="eyebrow">⚾ Today’s Matchup</div>
-              <h2 id="matchupOpponent">Loading matchup...</h2>
-              <p id="matchupPitcher" class="matchup-subtitle">Finding probable starter...</p>
-            </div>
-
-            <div class="matchup-header-actions">
-              <div id="matchupPitcherToggle"></div>
-              <div class="matchup-score-pill">Matchup Model</div>
-            </div>
-          </div>
-
-          <div class="matchup-metric-context">
-            <span>Matchup Pitcher</span>
-            <small>Recent form and handedness splits</small>
-          </div>
-
-          <div class="matchup-grid">
-            <article class="matchup-stat-card">
-              <div class="label" id="pitcherRoleLabel">Pitcher Facing Top Signal</div>
-              <div id="pitcherNameCard" class="value">—</div>
-            </article>
-
-            <article class="matchup-stat-card">
-              <div class="label">Throws</div>
-              <div id="pitcherThrows" class="value">—</div>
-            </article>
-
-            <article class="matchup-stat-card">
-              <div class="label" id="pitcherEraLabel">Last 5 ERA</div>
-              <div id="pitcherEra" class="value">—</div>
-            </article>
-
-            <article class="matchup-stat-card">
-              <div class="label" id="pitcherWhipLabel">Last 5 WHIP</div>
-              <div id="pitcherWhip" class="value">—</div>
-            </article>
-
-            <article class="matchup-stat-card">
-              <div class="label">BAA vs LHB</div>
-              <div id="pitcherVsLhb" class="value">—</div>
-            </article>
-
-            <article class="matchup-stat-card">
-              <div class="label">BAA vs RHB</div>
-              <div id="pitcherVsRhb" class="value">—</div>
-            </article>
-          </div>
-        </section>
-
-        <section class="hero-grid">
-          <article class="insight-card primary-insight">
-            <div class="card-topline">
-              <span>Top Signal</span>
-              <span id="activeWindowLabel">Model Hit Probability</span>
-            </div>
-            <div class="hero-player" id="heroPlayer">—</div>
-            <div class="hero-score" id="heroScore">Hit Probability —</div>
-            <p class="hero-model-context">Recent form anchored to the last 10 games, combined with matchup and season context.</p>
-            <p id="heroNarrative">Loading hitter form model...</p>
-          </article>
-
-          <div class="kpi-window-label">Last 10 Games</div>
-
-          <article class="insight-card compact">
-            <div class="metric-icon">⚾</div>
-            <div class="metric-label">Best AVG</div>
-            <div class="metric-value" id="kpiAvg">—</div>
-            <div class="metric-sub" id="kpiAvgSub">Waiting for data</div>
-          </article>
-
-          <article class="insight-card compact">
-            <div class="metric-icon">💣</div>
-            <div class="metric-label">Most HR</div>
-            <div class="metric-value" id="kpiHr">—</div>
-            <div class="metric-sub" id="kpiHrSub">Waiting for data</div>
-          </article>
-
-          <article class="insight-card compact">
-            <div class="metric-icon">📈</div>
-            <div class="metric-label">Best Hit Rate</div>
-            <div class="metric-value" id="kpiHitRate">—</div>
-            <div class="metric-sub" id="kpiHitRateSub">Waiting for data</div>
-          </article>
-        </section>
-
-        <div id="teamBoardControls"></div>
-
-        <section class="click-note">
-          <div>
-            <strong>Tip:</strong> Click any player to compare V3 probability with similar historical profiles, then review the key matchup signals.
-          </div>
-          <span>Comparable-profile sample size and strength are shown so the historical rate can be judged in context.</span>
-        </section>
-<section class="board-card">
-          <div class="board-header">
-            <div>
-              <div class="eyebrow" id="teamBoardEyebrow">Game-Specific V3 Board</div>
-              <h2 id="teamBoardTitle">Selected Game Hit Probabilities</h2>
-            </div>
-
-            <div class="board-meta">
-              <span id="statusPill">Loading...</span>
-              <span id="lastRefresh">Last refresh: —</span>
-            </div>
-          </div>
-
-          <div class="table-wrap" id="teamBoardTableWrap">
-            <table>
-              <thead>
-                <tr>
-                  <th class="rank">#</th>
-                  <th>Player</th>
-                  <th>Team</th>
-                  <th class="num">Matchup Score</th>
-                  <th class="num">V2 Pick Score</th>
-                  <th class="num">Hot Score</th>
-                  <th class="num">Batter Split</th>
-                  <th class="num">SP Vulnerability</th>
-                  <th class="num">SP Recent Form</th>
-                  <th class="num">SP Last 5 WHIP</th>
-                  <th>Opponent SP</th>
-                  <th>Game</th>
-                </tr>
-              </thead>
-
-              <tbody id="hittersTableBody">
-                <tr>
-                  <td colspan="12" class="empty-state">Loading selected-game hitter data...</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </section>
-      </section>
 
       <section id="marketEdgeView" class="view">
         <div id="marketEdgeContent">
@@ -385,7 +239,7 @@
     </div>
   </aside>
 
-  <script src="./app-v4.js?v=model-performance-window-fix-20260807b"></script>
+  <script src="./app-v4.js?v=phase5e-unified-board-cleanup-20260812"></script>
   <script src="./phase4b.js?v=phase4b-drawer-profile-sample-fix-20260812d"></script>
   <script src="./phase5b.js?v=phase5b-compact-controls-20260812b"></script>
   <script src="./phase5c.js?v=phase5c-selected-game-pitcher-card-20260812"></script>

@@ -1,23 +1,15 @@
 const SUPABASE_URL = "https://squcmdsivnnxzblsfciu.supabase.co";
 const SUPABASE_KEY = "sb_publishable_pumFxQJ7pYyRC8lrjSvtZA_x63TVYtq";
 
-const REDS_TEAM_ID = 113;
 const SEASON = 2026;
 const PERFORMANCE_WINDOWS = [3, 5, 6, 10];
 
-console.info("MLB Hit Lab app-v4 loaded: model-performance-last14-baseline-source-fix-20260809");
+console.info("MLB Hit Lab app-v4 loaded: phase5e-unified-board-cleanup-20260812");
 
 const client = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-let selectedWindow = 10;
 let performanceWindow = 10;
 let performanceScope = "mlb";
-let compareWindow = 10;
-let hotRows = [];
-let splitRows = [];
-let matchupRows = [];
-let bvpRows = [];
-let pitcherHandSplits = { lhb: null, rhb: null };
 let performanceSummary = null;
 let topPickPerformance = null;
 let componentAnalysis = null;
@@ -30,8 +22,6 @@ let mlbRankPerformanceRows = [];
 let mlbScoreBucketRows = [];
 let mlbWindowComparisonRows = [];
 let comparisonRows = [];
-let compareBoardHotRows = [];
-let compareBoardMatchupRows = [];
 let mlbRows = [];
 let v2EnhancementRows = [];
 let mlbV2EnhancementRows = [];
@@ -43,16 +33,9 @@ let v3PerformanceRows = [];
 let marketEdgeRows = [];
 let marketEdgeHealth = null;
 let boardOddsRows = [];
-let selectedTeamSide = "all";
-let selectedGamePk = null;
-let selectedPitcherSide = "home";
-let availableTeamGames = [];
-let teamGameRows = [];
-let teamGameHotRows = [];
 
 const MLB_BOARD_MODE = "ml";
 const V2_ENHANCEMENT_SELECT = "player_id,full_name,team_id,team_name,game_pk,model_v2_score,model_confidence,expected_plate_appearances,recent_lineup_spot,adjusted_batter_split_avg,adjusted_pitcher_baa_split,adjusted_batter_split_score,adjusted_pitcher_vulnerability_score";
-let searchTerm = "";
 let v3DrawerExplanationRows = [];
 const V3_DRAWER_EXPLANATION_SELECT = "prediction_id,model_run_id,target_name,prediction_run_date,game_pk,player_id,rank_overall,headline,explanation_text,matchup_summary_text,positive_tags,negative_tags,generation_method,generation_status,contribution_model_name,contribution_model_version,contribution_model_status,confidence_bucket,rank_team,calculation_method,top_positive_drivers,top_risk_factors,feature_count";
 const MARKET_EDGE_SELECT = [
@@ -151,15 +134,6 @@ function setHtml(id, value) {
 }
 
 
-function setTeamBoardText(genericId, value) {
-  setText(genericId, value);
-}
-
-function setTeamBoardHtml(genericId, value) {
-  setHtml(genericId, value);
-}
-
-
 function escapeHtml(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -205,7 +179,6 @@ function fmtRate(value) {
   if (value === null || value === undefined || Number.isNaN(Number(value))) return "—";
   return `${Math.round(Number(value) * 100)}%`;
 }
-
 
 
 function clampNumber(value, min, max) {
@@ -627,168 +600,6 @@ function renderSpRecentScore(score) {
   return fmtDecimal(score, 1);
 }
 
-function findHot(playerId) {
-  return hotRows.find((x) => String(x.player_id) === String(playerId));
-}
-
-function findSplit(playerId) {
-  return splitRows.find((x) => String(x.player_id) === String(playerId));
-}
-
-function findMatchup(playerId) {
-  return matchupRows.find((x) => String(x.player_id) === String(playerId));
-}
-
-function findBvp(playerId) {
-  return bvpRows.find((x) => String(x.player_id) === String(playerId));
-}
-
-function filteredRows() {
-  const q = searchTerm.trim().toLowerCase();
-  if (!q) return hotRows;
-  return hotRows.filter((x) => String(x.full_name || "").toLowerCase().includes(q));
-}
-
-async function loadHotData() {
-  try {
-    setText("activeWindowLabel", `Player Last ${selectedWindow} Games`);
-    setText("statusPill", "Loading...");
-
-    setHtml("hittersTableBody", `
-      <tr>
-        <td colspan="12" class="empty-state">Loading selected-game hitter data...</td>
-      </tr>
-    `);
-
-    const { data, error } = await client.rpc("get_team_hot_hitters", {
-      p_team_id: REDS_TEAM_ID,
-      p_last_n: selectedWindow
-    });
-
-    if (error) throw error;
-
-    hotRows = (data || [])
-      .filter(isRealPlayer)
-      .sort((a, b) => Number(b.hot_score || 0) - Number(a.hot_score || 0));
-
-    setText("statusPill", `${hotRows.length} hitters · Player last ${selectedWindow} games`);
-    setText("lastRefresh", `Last refresh: ${new Date().toLocaleString()}`);
-
-    setText("heroPlayer", "Loading matchup model...");
-    setText("heroScore", "Matchup Score —");
-    setText("heroNarrative", "Waiting for today’s matchup scores before selecting the Top Signal.");
-    renderKpis();
-    renderTable();
-
-    await Promise.all([
-      loadSplitsData(),
-      loadMatchupData(),
-      loadBvpData(),
-      loadPerformanceData(),
-      loadTeamGameBoardData()
-    ]);
-
-    await loadPitcherHandSplits();
-
-    // Re-render hero/KPIs after matchup and game-board data load so cards follow the active board context.
-    renderHero();
-    renderKpis();
-    renderMatchupHero();
-    renderTable();
-  } catch (err) {
-    console.error(err);
-    setText("statusPill", "Error");
-    setHtml("hittersTableBody", `
-      <tr>
-        <td colspan="11" class="empty-state">Error loading data: ${err.message || err}</td>
-      </tr>
-    `);
-  }
-}
-
-async function loadSplitsData() {
-  try {
-    const { data, error } = await client.rpc("get_team_batting_splits", {
-      p_team_id: REDS_TEAM_ID,
-      p_season: SEASON
-    });
-
-    if (error) throw error;
-
-    splitRows = (data || []).filter(isRealPlayer);
-  } catch (err) {
-    console.error("Error loading splits:", err);
-  }
-}
-
-async function loadMatchupData() {
-  try {
-    const [matchupResult, v2Rows] = await Promise.all([
-      client.rpc("get_today_reds_batter_matchups", {
-        p_team_id: REDS_TEAM_ID,
-        p_last_n: selectedWindow
-      }),
-      loadV2Enhancements(REDS_TEAM_ID)
-    ]);
-
-    if (matchupResult.error) throw matchupResult.error;
-
-    v2EnhancementRows = v2Rows || [];
-    matchupRows = mergeV2Enhancements(
-      (matchupResult.data || []).filter(isRealPlayer),
-      v2EnhancementRows
-    );
-  } catch (err) {
-    console.error("Error loading matchup data:", err);
-    matchupRows = [];
-  }
-}
-
-async function loadPitcherHandSplits() {
-  const starter = matchupRows[0];
-
-  pitcherHandSplits = { lhb: null, rhb: null };
-
-  if (!starter?.pitcher_id) {
-    return;
-  }
-
-  try {
-    const { data, error } = await client
-      .from("mlb_pitcher_splits")
-      .select("split_value, batting_average_against, at_bats_against, hits_allowed")
-      .eq("pitcher_id", starter.pitcher_id)
-      .eq("season", SEASON)
-      .eq("split_type", "batter_hand")
-      .in("split_value", ["LHB", "RHB"]);
-
-    if (error) throw error;
-
-    (data || []).forEach((row) => {
-      if (row.split_value === "LHB") pitcherHandSplits.lhb = row;
-      if (row.split_value === "RHB") pitcherHandSplits.rhb = row;
-    });
-  } catch (err) {
-    console.error("Error loading pitcher handedness splits:", err);
-    pitcherHandSplits = { lhb: null, rhb: null };
-  }
-}
-
-async function loadBvpData() {
-  try {
-    const { data, error } = await client
-      .from("v_today_batter_vs_pitcher")
-      .select("*");
-
-    if (error) throw error;
-
-    bvpRows = data || [];
-  } catch (err) {
-    console.error("Error loading batter-vs-pitcher history:", err);
-    bvpRows = [];
-  }
-}
-
 async function loadPerformanceData() {
   try {
     const [
@@ -907,34 +718,6 @@ async function loadPerformanceData() {
   }
 }
 
-async function loadModelCompareData() {
-  try {
-    const [hotResult, matchupResult] = await Promise.all([
-      client.rpc("get_team_hot_hitters", {
-        p_team_id: REDS_TEAM_ID,
-        p_last_n: compareWindow
-      }),
-      client.rpc("get_today_reds_batter_matchups", {
-        p_team_id: REDS_TEAM_ID,
-        p_last_n: compareWindow
-      })
-    ]);
-
-    if (hotResult.error) throw hotResult.error;
-    if (matchupResult.error) throw matchupResult.error;
-
-    compareBoardHotRows = (hotResult.data || []).filter(isRealPlayer);
-    compareBoardMatchupRows = (matchupResult.data || []).filter(isRealPlayer);
-
-    renderModelComparePage();
-  } catch (err) {
-    console.error("Error loading experimental model board:", err);
-    compareBoardHotRows = [];
-    compareBoardMatchupRows = [];
-    renderModelComparePage();
-  }
-}
-
 function setPerformanceMetric(id, value, subId, subValue) {
   setText(id, value);
   if (subId) setText(subId, subValue || "");
@@ -1018,7 +801,6 @@ function renderRankAnalysisRows() {
 }
 
 
-
 function renderPitcherVulnerabilityRows() {
   if (!pitcherVulnerabilityRows.length) {
     return `<tr><td colspan="3" class="empty-state">No pitcher vulnerability data available yet.</td></tr>`;
@@ -1091,7 +873,6 @@ function renderMlbScoreBucketRows() {
     </tr>
   `).join("");
 }
-
 
 
 function selectedMlbWindowStats() {
@@ -1364,951 +1145,7 @@ function pitcherDisplayThrows(matchup) {
   return isPitcherTbd(matchup) ? "—" : (matchup.pitcher_throws || "—");
 }
 
-function renderMatchupHero() {
-  const first = matchupRows[0];
-
-  if (!first) {
-    setText("matchupOpponent", "No matchup loaded");
-    setText(
-      "matchupPitcher",
-      "Run the matchup loader to populate today's or next game's probable starter."
-    );
-
-    setText("pitcherNameCard", "—");
-    setText("pitcherThrows", "—");
-    setText("pitcherEra", "—");
-    setText("pitcherWhip", "—");
-    setText("pitcherVsLhb", "—");
-    setText("pitcherVsRhb", "—");
-    return;
-  }
-
-  const timing = matchupTimingLabel(first.game_date);
-  const gameDate = formatGameDate(first.game_date);
-  const starterIsTbd = isPitcherTbd(first);
-  const starterName = pitcherDisplayName(first);
-  const starterThrows = pitcherDisplayThrows(first);
-
-  setText(
-    "matchupOpponent",
-    `${timing}: Reds vs ${first.opponent_team_name || "Opponent"}`
-  );
-
-  setText(
-    "matchupPitcher",
-    starterIsTbd
-      ? `${gameDate} · Probable starter TBD`
-      : `${gameDate} · ${starterName}${first.pitcher_throws ? ` · ${first.pitcher_throws}HP` : ""}`
-  );
-
-  setText("pitcherNameCard", starterName);
-  setText("pitcherThrows", starterThrows);
-  setText("pitcherEra", starterIsTbd ? "—" : fmtDecimal(first.pitcher_last5_era, 2));
-  setText("pitcherWhip", starterIsTbd ? "—" : fmtDecimal(first.pitcher_last5_whip, 2));
-  setText("pitcherVsLhb", starterIsTbd ? "—" : fmtAvg(pitcherHandSplits.lhb?.batting_average_against));
-  setText("pitcherVsRhb", starterIsTbd ? "—" : fmtAvg(pitcherHandSplits.rhb?.batting_average_against));
-}
-
-
-function rankingScore(row) {
-  const matchup = findMatchup(row?.player_id);
-  const matchupScore = Number(matchup?.matchup_score);
-  if (Number.isFinite(matchupScore)) return matchupScore;
-  return Number(row?.hot_score || 0);
-}
-
-function rankedRows() {
-  return filteredRows().slice().sort((a, b) => {
-    const scoreDelta = rankingScore(b) - rankingScore(a);
-    if (scoreDelta !== 0) return scoreDelta;
-
-    const hotDelta = Number(b.hot_score || 0) - Number(a.hot_score || 0);
-    if (hotDelta !== 0) return hotDelta;
-
-    return Number(b.hit_rate || 0) - Number(a.hit_rate || 0);
-  });
-}
-
-function rankedAllRows() {
-  return hotRows.slice().sort((a, b) => {
-    const scoreDelta = rankingScore(b) - rankingScore(a);
-    if (scoreDelta !== 0) return scoreDelta;
-
-    const hotDelta = Number(b.hot_score || 0) - Number(a.hot_score || 0);
-    if (hotDelta !== 0) return hotDelta;
-
-    return Number(b.hit_rate || 0) - Number(a.hit_rate || 0);
-  });
-}
-
-
-function topMatchupSignal() {
-  const scoredMatchups = matchupRows
-    .filter((row) => Number.isFinite(Number(row?.matchup_score)))
-    .slice()
-    .sort((a, b) => {
-      const scoreDelta = Number(b.matchup_score || 0) - Number(a.matchup_score || 0);
-      if (scoreDelta !== 0) return scoreDelta;
-
-      const bHot = hotRows.find((x) => String(x.player_id) === String(b.player_id));
-      const aHot = hotRows.find((x) => String(x.player_id) === String(a.player_id));
-      return Number(bHot?.hot_score || 0) - Number(aHot?.hot_score || 0);
-    });
-
-  const matchup = scoredMatchups[0] || null;
-  if (!matchup) return { player: null, matchup: null };
-
-  const player =
-    hotRows.find((row) => String(row.player_id) === String(matchup.player_id)) ||
-    matchup;
-
-  return { player, matchup };
-}
-
-function selectedTeamGame() {
-  const selected = availableTeamGames.find(
-    (game) => String(game.game_pk) === String(selectedGamePk)
-  );
-  return selected || availableTeamGames[0] || null;
-}
-
-function teamGameLabel(game = selectedTeamGame()) {
-  if (!game) return "Selected MLB Game";
-  return game.game_label ||
-    `${game.away_team_name || "Away"} at ${game.home_team_name || "Home"}`;
-}
-
-function teamGameSideLabel(side) {
-  const game = selectedTeamGame();
-  if (side === "away") return game?.away_team_name || "Away";
-  if (side === "home") return game?.home_team_name || "Home";
-  return "All hitters";
-}
-
-function formatTeamGameTime(game = selectedTeamGame()) {
-  if (!game?.game_time_utc) return game?.venue_name || "Game time TBD";
-  const value = new Date(game.game_time_utc);
-  const time = value.toLocaleTimeString([], {
-    hour: "numeric",
-    minute: "2-digit"
-  });
-  return `${time}${game.venue_name ? ` · ${game.venue_name}` : ""}`;
-}
-
-function selectedGameBoardRows() {
-  const q = searchTerm.trim().toLowerCase();
-
-  return (teamGameRows || []).filter((row) => {
-    if (selectedTeamSide !== "all" && row.hitter_side !== selectedTeamSide) {
-      return false;
-    }
-
-    if (!q) return true;
-
-    const name = String(row.batter_name || row.full_name || "").toLowerCase();
-    const team = String(row.team_name || "").toLowerCase();
-    return name.includes(q) || team.includes(q);
-  });
-}
-
-function selectedGamePitcherRow(side = selectedPitcherSide) {
-  // A home-team pitcher faces away hitters; an away-team pitcher faces home hitters.
-  // Do not fall back to the other team's starter when the selected side is TBD.
-  const opposingHitterSide = side === "away" ? "home" : "away";
-  return (
-    teamGameRows.find(
-      (row) =>
-        row.hitter_side === opposingHitterSide &&
-        row.pitcher_id
-    ) ||
-    null
-  );
-}
-
-function selectedGamePitchers() {
-  return {
-    home: selectedGamePitcherRow("home"),
-    away: selectedGamePitcherRow("away")
-  };
-}
-
-function renderHero() {
-  setText("activeWindowLabel", "Model Hit Probability");
-
-  const rows = selectedGameBoardRows();
-  const top = rows[0] || teamGameRows[0] || null;
-
-  if (!top) {
-    setText("heroPlayer", "—");
-    setText("heroScore", "Hit Probability —");
-    setText("heroNarrative", "No V3 predictions returned for the selected game and team filter.");
-    return;
-  }
-
-  const playerName = top.batter_name || top.full_name || "Top hitter";
-  const probability = Number(top.hit_probability_pct || 0);
-  const confidence = titleCase(top.confidence_bucket || "standard");
-  const opponentPitcher = top.pitcher_name || "the opposing starter";
-  const game = selectedTeamGame();
-
-  setText("heroPlayer", `⭐ ${playerName}`);
-  setText("heroScore", `Hit Probability ${probability.toFixed(1)}% · ${confidence} confidence`);
-  setText(
-    "heroNarrative",
-    `${playerName} leads the ${teamGameLabel(game)} V3 board against ${opponentPitcher}.`
-  );
-}
-
-function currentTeamKpiRows() {
-  const sourceRows = selectedGameBoardRows();
-  const hotByPlayer = new Map(
-    (teamGameHotRows || []).map((row) => [String(row.player_id), row])
-  );
-
-  return sourceRows
-    .map((row) => {
-      const hot = hotByPlayer.get(String(row.player_id)) || {};
-      return {
-        ...row,
-        full_name: row.full_name || row.batter_name || hot.full_name,
-        kpi_avg: row.batter_recent_avg ?? row.batting_average ?? hot.batting_average,
-        kpi_hits: row.batter_recent_hits ?? row.hits ?? hot.hits,
-        kpi_at_bats: row.batter_recent_at_bats ?? row.at_bats ?? hot.at_bats,
-        kpi_hit_rate: row.batter_recent_hit_rate ?? row.hit_rate ?? hot.hit_rate,
-        kpi_games_with_hit: row.games_with_hit ?? hot.games_with_hit,
-        kpi_games: row.games ?? hot.games,
-        kpi_home_runs: row.home_runs ?? hot.home_runs,
-        kpi_rbi: row.rbi ?? hot.rbi
-      };
-    })
-    .filter((row) => row.full_name);
-}
-
 // Compatibility wrapper for older callers.
-function currentRedsKpiRows() {
-  return currentTeamKpiRows();
-}
-
-function renderKpis() {
-  const rows = currentTeamKpiRows();
-
-  if (!rows.length) {
-    setText("kpiAvg", "—");
-    setText("kpiAvgSub", "No players in current filter");
-    setText("kpiHr", "—");
-    setText("kpiHrSub", "No players in current filter");
-    setText("kpiHitRate", "—");
-    setText("kpiHitRateSub", "No players in current filter");
-    return;
-  }
-
-  const minAb = Math.max(5, selectedWindow * 1.5);
-  const bestAvg = [...rows]
-    .filter((x) => Number(x.kpi_at_bats || 0) >= minAb)
-    .sort((a, b) => Number(b.kpi_avg || 0) - Number(a.kpi_avg || 0))[0] ||
-    [...rows].sort((a, b) => Number(b.kpi_avg || 0) - Number(a.kpi_avg || 0))[0];
-
-  const mostHr = [...rows]
-    .filter((x) => x.kpi_home_runs !== null && x.kpi_home_runs !== undefined)
-    .sort((a, b) =>
-      Number(b.kpi_home_runs || 0) - Number(a.kpi_home_runs || 0) ||
-      Number(b.kpi_rbi || 0) - Number(a.kpi_rbi || 0)
-    )[0];
-
-  const bestHitRate = [...rows]
-    .filter((x) => x.kpi_hit_rate !== null && x.kpi_hit_rate !== undefined)
-    .sort((a, b) => Number(b.kpi_hit_rate || 0) - Number(a.kpi_hit_rate || 0))[0];
-
-  if (bestAvg) {
-    setText("kpiAvg", bestAvg.full_name);
-    setText("kpiAvgSub", `${fmtAvg(bestAvg.kpi_avg)} AVG · ${fmtNum(bestAvg.kpi_hits)} hits`);
-  }
-
-  if (mostHr) {
-    setText("kpiHr", mostHr.full_name);
-    setText("kpiHrSub", `${fmtNum(mostHr.kpi_home_runs)} HR · ${fmtNum(mostHr.kpi_rbi)} RBI`);
-  } else {
-    setText("kpiHr", "—");
-    setText("kpiHrSub", "HR data unavailable for filter");
-  }
-
-  if (bestHitRate) {
-    const gamesText =
-      bestHitRate.kpi_games_with_hit != null && bestHitRate.kpi_games != null
-        ? ` · ${fmtNum(bestHitRate.kpi_games_with_hit)}/${fmtNum(bestHitRate.kpi_games)} games`
-        : "";
-    setText("kpiHitRate", bestHitRate.full_name);
-    setText("kpiHitRateSub", `${fmtPct(bestHitRate.kpi_hit_rate)}${gamesText}`);
-  }
-}
-
-async function loadSelectedGameHotStats() {
-  try {
-    const game = selectedTeamGame();
-    const teamIds = [game?.away_team_id, game?.home_team_id]
-      .filter((value) => value !== null && value !== undefined);
-
-    if (!teamIds.length) {
-      teamGameHotRows = [];
-      return;
-    }
-
-    const results = await Promise.all(
-      [...new Set(teamIds)].map((teamId) =>
-        client.rpc("get_team_hot_hitters", {
-          p_team_id: Number(teamId),
-          p_last_n: selectedWindow
-        })
-      )
-    );
-
-    teamGameHotRows = results
-      .flatMap((result) => (result.error ? [] : result.data || []))
-      .filter(isRealPlayer);
-
-  } catch (err) {
-    console.error("Error loading selected-game hot stats:", err);
-    teamGameHotRows = [];
-  }
-}
-
-async function loadTeamGameSelector() {
-  const { data, error } = await client
-    .from("v_mlb_v3_game_selector")
-    .select("*")
-    .order("game_time_utc", { ascending: true });
-
-  if (error) throw error;
-
-  availableTeamGames = data || [];
-
-  if (!availableTeamGames.length) {
-    selectedGamePk = null;
-    return;
-  }
-
-  const selectedStillExists = availableTeamGames.some(
-    (game) => String(game.game_pk) === String(selectedGamePk)
-  );
-
-  if (!selectedStillExists) {
-    const redsGame = availableTeamGames.find(
-      (game) =>
-        Number(game.home_team_id) === REDS_TEAM_ID ||
-        Number(game.away_team_id) === REDS_TEAM_ID
-    );
-    selectedGamePk = (redsGame || availableTeamGames[0]).game_pk;
-  }
-}
-
-async function loadSelectedGameRows() {
-  if (!selectedGamePk) {
-    teamGameRows = [];
-    return;
-  }
-
-  const { data, error } = await client
-    .from("v_mlb_v3_game_hit_board_cache")
-    .select("*")
-    .eq("game_pk", selectedGamePk)
-    .order("rank_overall", { ascending: true });
-
-  if (error) throw error;
-
-  teamGameRows = (data || [])
-    .filter((row) => row.batter_name || row.full_name)
-    .map(normalizeV3HitRow)
-    .sort((a, b) =>
-      Number(b.hit_probability_pct || 0) - Number(a.hit_probability_pct || 0)
-    );
-
-}
-
-async function loadSelectedGamePitcherSplits() {
-  const pitcherIds = [...new Set(
-    teamGameRows
-      .map((row) => Number(row.pitcher_id))
-      .filter(Number.isFinite)
-  )];
-
-  mlbTargetPitcherSplits = {};
-
-  if (!pitcherIds.length) return;
-
-  try {
-    const { data, error } = await client
-      .from("mlb_pitcher_splits")
-      .select(
-        "pitcher_id,split_value,batting_average_against,at_bats_against,hits_allowed"
-      )
-      .eq("season", SEASON)
-      .eq("split_type", "batter_hand")
-      .in("pitcher_id", pitcherIds)
-      .in("split_value", ["LHB", "RHB"]);
-
-    if (error) throw error;
-
-    (data || []).forEach((row) => {
-      const key = String(row.pitcher_id);
-      if (!mlbTargetPitcherSplits[key]) {
-        mlbTargetPitcherSplits[key] = { lhb: null, rhb: null };
-      }
-
-      if (row.split_value === "LHB") {
-        mlbTargetPitcherSplits[key].lhb = row;
-      } else if (row.split_value === "RHB") {
-        mlbTargetPitcherSplits[key].rhb = row;
-      }
-    });
-
-    console.info("Loaded selected-game pitcher handedness splits", {
-      pitcherIds,
-      splitPitchers: Object.keys(mlbTargetPitcherSplits)
-    });
-  } catch (err) {
-    mlbTargetPitcherSplits = {};
-    console.error("Error loading selected-game pitcher splits:", err);
-  }
-}
-
-async function loadTeamGameBoardData() {
-  try {
-    await Promise.all([
-      loadTeamGameSelector(),
-      loadBoardOddsRows()
-    ]);
-    await loadSelectedGameRows();
-    await Promise.all([
-      loadSelectedGameHotStats(),
-      loadSelectedGamePitcherSplits()
-    ]);
-  } catch (err) {
-    console.error("Error loading Team Hit Board data:", err);
-    teamGameRows = [];
-    teamGameHotRows = [];
-  }
-}
-
-
-async function handleTeamGameChange(gamePk) {
-  selectedGamePk = gamePk || null;
-  selectedTeamSide = "all";
-  selectedPitcherSide = "home";
-  searchTerm = "";
-  const input = $("playerSearch");
-  if (input) input.value = "";
-
-  setText("statusPill", "Loading selected game...");
-  await loadSelectedGameRows();
-  await Promise.all([
-    loadSelectedGameHotStats(),
-    loadSelectedGamePitcherSplits()
-  ]);
-  renderTeamBoardPage();
-}
-
-function handleTeamSideChange(side) {
-  selectedTeamSide = ["all", "home", "away"].includes(side) ? side : "all";
-  renderTeamBoardPage();
-}
-
-function handlePitcherSideChange(side) {
-  selectedPitcherSide = side === "away" ? "away" : "home";
-  renderMatchupHero();
-}
-
-function renderTeamGameSelector() {
-  const selectedValue = String(selectedGamePk || "");
-  const options = availableTeamGames.map((game) => {
-    const time = game.game_time_utc
-      ? new Date(game.game_time_utc).toLocaleTimeString([], {
-          hour: "numeric",
-          minute: "2-digit"
-        })
-      : "TBD";
-    const label = `${game.game_label || `${game.away_team_name} at ${game.home_team_name}`} · ${time}`;
-    return `<option value="${escapeHtml(game.game_pk)}" ${
-      String(game.game_pk) === selectedValue ? "selected" : ""
-    }>${escapeHtml(label)}</option>`;
-  }).join("");
-
-  return `
-    <section class="team-game-selector-card" aria-label="Team Hit Board game selector">
-      <div class="team-game-selector-copy">
-        <div class="eyebrow">Game Selection</div>
-        <strong>Choose an MLB matchup</strong>
-      </div>
-      <label class="team-game-select-label">
-        <span>Game</span>
-        <select id="teamGameSelect" onchange="handleTeamGameChange(this.value)">
-          ${options || `<option value="">No V3 games available</option>`}
-        </select>
-      </label>
-    </section>
-  `;
-}
-
-function renderTeamBoardControls() {
-  const game = selectedTeamGame();
-  const away = game?.away_team_name || "Away";
-  const home = game?.home_team_name || "Home";
-
-  return `
-    <section class="control-deck performance-window-deck team-v3-controls unified-board-controls team-filter-only-controls">
-      <div class="control-group compact-model-group">
-        <div class="board-model-badge" aria-label="Active prediction model">
-          <span class="board-model-icon">⭐</span>
-          <span class="board-model-copy">
-            <small>Active Model</small>
-            <strong>V3 ML</strong>
-          </span>
-          <span class="board-model-status">Live</span>
-        </div>
-      </div>
-
-      <div class="control-group team-filter-group">
-        <div class="control-label">Team Filter</div>
-        <div class="segmented" id="teamSideFilterButtons">
-          <button class="segment ${selectedTeamSide === "all" ? "active" : ""}"
-            onclick="handleTeamSideChange('all')" type="button">All</button>
-          <button class="segment ${selectedTeamSide === "away" ? "active" : ""}"
-            onclick="handleTeamSideChange('away')" type="button">Away · ${escapeHtml(away)}</button>
-          <button class="segment ${selectedTeamSide === "home" ? "active" : ""}"
-            onclick="handleTeamSideChange('home')" type="button">Home · ${escapeHtml(home)}</button>
-        </div>
-      </div>
-    </section>
-  `;
-}
-
-function renderTeamMlRows(rows) {
-  if (!rows.length) {
-    return `<tr><td colspan="9" class="empty-state">No V3 hitters match the selected game and team filter.</td></tr>`;
-  }
-
-  return rows.map((row, index) => `
-    <tr class="clickable-row" data-team-v3-player-id="${row.player_id}">
-      <td class="rank"><span class="rank-badge">${index + 1}</span></td>
-      <td>
-        <div class="player-cell">
-          <div class="avatar ${String(row.batter_bats || "R").toLowerCase()}">${handednessBadge({ bats: row.batter_bats })}</div>
-          <div>
-            <div class="player-name">${escapeHtml(row.batter_name || row.full_name)}</div>
-            <div class="player-sub">${escapeHtml(titleCase(row.hitter_side || ""))} hitter · click for model detail</div>
-          </div>
-        </div>
-      </td>
-      <td>${escapeHtml(row.team_name || "—")}</td>
-      <td class="num">
-        <div class="score-bar-wrap probability-cell">
-          <div class="score-bar"><div class="score-bar-fill" style="width:${Math.min(100, Number(row.hit_probability_pct || 0))}%"></div></div>
-          <span class="score-value">${fmtProbabilityPct(row)}</span>
-        </div>
-      </td>
-      ${renderBoardOddsCell(row)}
-      <td><span class="confidence-badge ${v3ConfidenceClass(row.confidence_bucket)}">${escapeHtml(titleCase(row.confidence_bucket || "model"))}</span></td>
-      <td class="why-cell">${renderWhyPills(row)}</td>
-      <td>
-        <div class="player-name">${escapeHtml(row.pitcher_name || "TBD")}</div>
-        <div class="player-sub">${escapeHtml(row.pitcher_team_name || "—")} · ${escapeHtml(row.pitcher_throws || "—")}HP</div>
-      </td>
-      <td>${row.game_date ? formatGameDate(row.game_date) : "—"}</td>
-    </tr>
-  `).join("");
-}
-
-
-function renderMatchupHero() {
-  const game = selectedTeamGame();
-  const pitchers = selectedGamePitchers();
-  const pitcherRow = pitchers[selectedPitcherSide] || null;
-
-  if (!game) {
-    setText("matchupOpponent", "No game selected");
-    setText("matchupPitcher", "Choose an available game above.");
-    setHtml("matchupPitcherToggle", "");
-    setText("pitcherNameCard", "—");
-    setText("pitcherThrows", "—");
-    setText("pitcherEra", "—");
-    setText("pitcherWhip", "—");
-    setText("pitcherVsLhb", "—");
-    setText("pitcherVsRhb", "—");
-    return;
-  }
-
-  setText("matchupOpponent", teamGameLabel(game));
-  setText(
-    "matchupPitcher",
-    `${formatGameDate(game.game_date)} · ${formatTeamGameTime(game)}`
-  );
-  setText(
-    "pitcherRoleLabel",
-    selectedPitcherSide === "home" ? "Home Starting Pitcher" : "Away Starting Pitcher"
-  );
-  setText("pitcherEraLabel", "Last 5 ERA");
-  setText("pitcherWhipLabel", "Last 5 WHIP");
-
-  setHtml("matchupPitcherToggle", `
-    <div class="pitcher-side-toggle" role="group" aria-label="Starting pitcher selector">
-      <button
-        type="button"
-        class="${selectedPitcherSide === "home" ? "active" : ""}"
-        onclick="handlePitcherSideChange('home')"
-      >
-        Home SP · ${escapeHtml(game.home_team_name || "Home")}
-      </button>
-      <button
-        type="button"
-        class="${selectedPitcherSide === "away" ? "active" : ""}"
-        onclick="handlePitcherSideChange('away')"
-      >
-        Away SP · ${escapeHtml(game.away_team_name || "Away")}
-      </button>
-    </div>
-  `);
-
-  const starterAvailable = Boolean(pitcherRow?.pitcher_id);
-
-  setText(
-    "pitcherNameCard",
-    starterAvailable ? (pitcherRow.pitcher_name || "Probable Starter TBD") : "Probable Starter TBD"
-  );
-  setText(
-    "pitcherThrows",
-    starterAvailable ? (pitcherRow.pitcher_throws || "—") : "—"
-  );
-  setText(
-    "pitcherEra",
-    starterAvailable ? fmtDecimal(pitcherRow?.pitcher_last5_era, 2) : "—"
-  );
-  setText(
-    "pitcherWhip",
-    starterAvailable ? fmtDecimal(pitcherRow?.pitcher_last5_whip, 2) : "—"
-  );
-
-  const handSplits = starterAvailable
-    ? (mlbTargetPitcherSplits?.[String(pitcherRow.pitcher_id)] || {})
-    : {};
-
-  setText(
-    "pitcherVsLhb",
-    starterAvailable
-      ? fmtAvg(
-          pitcherRow?.pitcher_baa_vs_lhb ??
-          handSplits?.lhb?.batting_average_against
-        )
-      : "—"
-  );
-  setText(
-    "pitcherVsRhb",
-    starterAvailable
-      ? fmtAvg(
-          pitcherRow?.pitcher_baa_vs_rhb ??
-          handSplits?.rhb?.batting_average_against
-        )
-      : "—"
-  );
-}
-
-function openTeamV3Drawer(playerId) {
-  const row = teamGameRows.find(
-    (item) => String(item.player_id) === String(playerId)
-  );
-
-  if (!row) {
-    console.error("Team Hit Board drawer row not found:", playerId);
-    return;
-  }
-
-  openV3MlbDrawer(row);
-}
-
-
-function renderTeamBoardPage() {
-  const game = selectedTeamGame();
-  const rows = selectedGameBoardRows();
-
-  setHtml("teamGameSelectorMount", renderTeamGameSelector());
-  setTeamBoardHtml("teamBoardControls", renderTeamBoardControls());
-  setTeamBoardText("teamBoardTitle", `${teamGameLabel(game)} Hit Probabilities`);
-  setTeamBoardText("teamBoardEyebrow", "Selected Game · V3 Team Board");
-  setText("statusPill", `${fmtNum(teamGameRows.length)} hitters scored`);
-  setText("lastRefresh", game ? `${formatTeamGameTime(game)}` : "V3 ML Prediction");
-
-  setTeamBoardHtml("teamBoardTableWrap", `
-    <table class="v3-board-table">
-      <thead>
-        <tr>
-          <th class="rank">#</th>
-          <th>Player</th>
-          <th>Team</th>
-          <th class="num">Hit Probability</th>
-          <th class="num">Best Odds</th>
-          <th>Confidence</th>
-          <th>Why</th>
-          <th>Opponent SP</th>
-          <th>Game</th>
-        </tr>
-      </thead>
-      <tbody id="hittersTableBody">${renderTeamMlRows(rows)}</tbody>
-    </table>
-  `);
-
-  renderMatchupHero();
-  renderHero();
-  renderKpis();
-}
-
-// Existing callers continue to use renderTable.
-function renderTable() {
-  renderTeamBoardPage();
-}
-
-// Expose handlers used by lightweight inline controls.
-window.handleTeamGameChange = handleTeamGameChange;
-window.handleTeamSideChange = handleTeamSideChange;
-window.handlePitcherSideChange = handlePitcherSideChange;
-
-function confidenceLabel(matchup) {
-  if (!matchup) return "—";
-
-  const batterReliability = Number(matchup.batter_split_reliability || 0);
-  const pitcherReliability = Number(matchup.pitcher_split_reliability || 0);
-
-  // Confidence should reflect the hitter split more than the pitcher split,
-  // but not punish too harshly when the pitcher-side sample is meaningful.
-  const confidenceScore =
-    (batterReliability * 0.60) +
-    (pitcherReliability * 0.40);
-
-  if (confidenceScore >= 0.50) return "High";
-  if (confidenceScore >= 0.25) return "Medium";
-  return "Low";
-}
-
-function breakdownRow(label, score, weight, note) {
-  const s = Number(score || 0);
-  const contribution = s * weight;
-  const width = Math.max(4, Math.min(100, s));
-
-  return `
-    <div class="breakdown-row">
-      <div class="breakdown-top">
-        <div>
-          <strong>${label}</strong>
-          <span>${note}</span>
-        </div>
-        <div class="breakdown-score">${s.toFixed(1)}</div>
-      </div>
-
-      <div class="breakdown-bar">
-        <div class="breakdown-fill" style="width: ${width}%"></div>
-      </div>
-
-      <div class="breakdown-contribution">
-        Weight ${(weight * 100).toFixed(0)}% · Contribution +${contribution.toFixed(1)}
-      </div>
-    </div>
-  `;
-}
-
-function renderScoreBreakdown(matchup) {
-  const el = $("drawerScoreBreakdown");
-  if (!el) return;
-
-  if (!matchup) {
-    el.innerHTML = `<div class="empty-mini">No matchup breakdown available.</div>`;
-    return;
-  }
-
-  const confidence = confidenceLabel(matchup);
-  const v2Summary = matchup.model_v2_score != null
-    ? `
-      <div class="v2-summary">
-        <div>
-          <span>V2 Pick Score</span>
-          <strong>${matchup.model_v2_score != null ? fmtDecimal(matchup.model_v2_score, 1) : "—"}</strong>
-        </div>
-        <div>
-          <span>Confidence</span>
-          <strong>${matchup.model_confidence || confidence}</strong>
-        </div>
-      </div>
-    `
-    : "";
-
-  el.innerHTML = `
-    <div class="confidence-pill">
-      Confidence: ${confidence}
-      <span>
-        Batter reliability ${Math.round(Number(matchup.batter_split_reliability || 0) * 100)}% ·
-        Pitcher reliability ${Math.round(Number(matchup.pitcher_split_reliability || 0) * 100)}%
-      </span>
-    </div>
-
-    ${v2Summary}
-
-    ${breakdownRow(
-      "Recent Form",
-      matchup.recent_form_score,
-      0.40,
-      `Last ${selectedWindow} games`
-    )}
-
-    ${breakdownRow(
-      "Batter Split",
-      matchup.batter_split_score,
-      0.35,
-      `${matchup.batter_split_label || "Split"} · ${fmtAvg(matchup.batter_split_avg)} AVG · ${fmtNum(matchup.batter_split_ab)} AB`
-    )}
-
-    ${breakdownRow(
-      "SP Vulnerability",
-      matchup.pitcher_vulnerability_score,
-      0.20,
-      `${matchup.pitcher_split_label || "Pitcher split"} · ${fmtAvg(matchup.pitcher_baa_split)} BAA`
-    )}
-
-    ${breakdownRow(
-      "Pitcher Recent Form",
-      matchup.pitcher_recent_form_score,
-      0.05,
-      `Last 5 starts · ${fmtDecimal(matchup.pitcher_last5_era, 2)} ERA · ${fmtDecimal(matchup.pitcher_last5_whip, 2)} WHIP`
-    )}
-  `;
-}
-
-function renderBvpSection(bvp, matchup) {
-  const pitcherName = isPitcherTbd(matchup)
-    ? "TBD probable starter"
-    : (bvp?.pitcher_name || matchup?.pitcher_name || "today's pitcher");
-
-  if (!bvp) {
-    return `
-      <section class="drawer-section">
-        <div class="drawer-section-title">Vs Today’s Pitcher</div>
-        <p class="drawer-explanation">
-          No prior plate appearances against ${pitcherName}.
-        </p>
-      </section>
-    `;
-  }
-
-  return `
-    <section class="drawer-section">
-      <div class="drawer-section-title">Vs Today’s Pitcher</div>
-      <p class="drawer-explanation">
-        Career history vs ${pitcherName}. Small samples should be treated as context, not prediction.
-      </p>
-
-      <div class="drawer-splits-grid">
-        <div class="split-tile">
-          <span>AVG</span>
-          <strong>${fmtAvg(bvp.batting_average)}</strong>
-          <small>${fmtNum(bvp.at_bats)} AB</small>
-        </div>
-
-        <div class="split-tile">
-          <span>Hits</span>
-          <strong>${fmtNum(bvp.hits)}</strong>
-          <small>${fmtNum(bvp.at_bats)} AB</small>
-        </div>
-
-        <div class="split-tile">
-          <span>HR</span>
-          <strong>${fmtNum(bvp.home_runs)}</strong>
-          <small>${fmtNum(bvp.rbi)} RBI</small>
-        </div>
-
-        <div class="split-tile">
-          <span>BB / K</span>
-          <strong>${fmtNum(bvp.walks)} / ${fmtNum(bvp.strikeouts)}</strong>
-          <small>career</small>
-        </div>
-
-        <div class="split-tile">
-          <span>OPS</span>
-          <strong>${fmtAvg(bvp.ops)}</strong>
-          <small>career</small>
-        </div>
-      </div>
-    </section>
-  `;
-}
-
-function openDrawer(playerId) {
-  restoreDefaultDrawerBody();
-  resetDrawerLabels();
-  $("playerDrawer")?.classList.remove("mlb-matchup-only");
-  $("playerDrawer")?.classList.remove("v3-detail-drawer");
-  const hot = findHot(playerId);
-  const split = findSplit(playerId);
-  const matchup = withV2Enhancement(findMatchup(playerId), v2EnhancementRows);
-  const bvp = findBvp(playerId);
-
-  const name = hot?.full_name || split?.full_name || matchup?.full_name || "Unknown Player";
-
-  setText("drawerPlayerName", name);
-  setText("drawerPlayerSub", `Player ID ${playerId} · ${selectedWindow}-game form, matchup, and 2026 splits`);
-
-  setText("drawerMatchupScore", matchup ? fmtDecimal(matchup.matchup_score, 1) : "—");
-  setText("drawerV2PickScore", matchup?.model_v2_score != null ? fmtDecimal(matchup.model_v2_score, 1) : "—");
-  setText(
-    "drawerPitcher",
-    matchup ? (isPitcherTbd(matchup) ? "Probable Starter TBD" : `${matchup.pitcher_name} (${matchup.pitcher_throws || "—"})`) : "—"
-  );
-  setText("drawerRecentFormScore", matchup ? fmtDecimal(matchup.recent_form_score, 1) : "—");
-  setText("drawerSplitScore", matchup ? fmtDecimal(matchup.batter_split_score, 1) : "—");
-  setText("drawerMatchupExplanation", matchup?.explanation || "No matchup explanation available yet.");
-  renderScoreBreakdown(matchup);
-
-  setText("drawerHotScore", hot ? Number(hot.hot_score || 0).toFixed(1) : "—");
-  setText("drawerAvg", hot ? fmtAvg(hot.batting_average) : "—");
-  setText("drawerHitRate", hot ? fmtPct(hot.hit_rate) : "—");
-  setText("drawerStreak", hot ? fmtNum(hot.current_hit_streak) : "—");
-
-  setText("drawerAb", hot ? fmtNum(hot.at_bats) : "—");
-  setText("drawerHits", hot ? fmtNum(hot.hits) : "—");
-  setText("drawerHr", hot ? fmtNum(hot.home_runs) : "—");
-  setText("drawerRbi", hot ? fmtNum(hot.rbi) : "—");
-  setText("drawerBb", hot ? fmtNum(hot.walks) : "—");
-  setText("drawerSb", hot ? fmtNum(hot.stolen_bases) : "—");
-
-  setText("drawerLhpAvg", split ? fmtAvg(split.vs_lhp_avg) : "—");
-  setText("drawerLhpAb", split ? `${fmtNum(split.vs_lhp_ab)} AB` : "— AB");
-
-  setText("drawerRhpAvg", split ? fmtAvg(split.vs_rhp_avg) : "—");
-  setText("drawerRhpAb", split ? `${fmtNum(split.vs_rhp_ab)} AB` : "— AB");
-
-  setText("drawerHomeAvg", split ? fmtAvg(split.home_avg) : "—");
-  setText("drawerHomeAb", split ? `${fmtNum(split.home_ab)} AB` : "— AB");
-
-  setText("drawerAwayAvg", split ? fmtAvg(split.away_avg) : "—");
-  setText("drawerAwayAb", split ? `${fmtNum(split.away_ab)} AB` : "— AB");
-
-  setText("drawerDayAvg", split ? fmtAvg(split.day_avg) : "—");
-  setText("drawerDayAb", split ? `${fmtNum(split.day_ab)} AB` : "— AB");
-
-  setText("drawerNightAvg", split ? fmtAvg(split.night_avg) : "—");
-  setText("drawerNightAb", split ? `${fmtNum(split.night_ab)} AB` : "— AB");
-
-const drawerBody = document.querySelector(".drawer-body");
-const existingBvp = document.getElementById("drawerBvpSection");
-
-if (existingBvp) {
-  existingBvp.remove();
-}
-
-if (drawerBody) {
-  const wrapper = document.createElement("div");
-  wrapper.id = "drawerBvpSection";
-  wrapper.innerHTML = renderBvpSection(bvp, matchup);
-  drawerBody.appendChild(wrapper);
-}
-  $("playerDrawer")?.classList.add("open");
-  $("drawerBackdrop")?.classList.add("open");
-}
-
 function setDrawerSectionLabel(currentText, nextText) {
   document.querySelectorAll(".drawer-section-title").forEach((el) => {
     if (el.textContent.trim() === currentText) {
@@ -2906,262 +1743,6 @@ function closeDrawer() {
 }
 
 
-
-function findCompareMatchup(playerId) {
-  return compareBoardMatchupRows.find((x) => String(x.player_id) === String(playerId));
-}
-
-function experimentalScore(matchup, fallbackHotScore = 0) {
-  if (!matchup) return Number(fallbackHotScore || 0);
-
-  return (
-    Number(matchup.recent_form_score || 0) * 0.45 +
-    Number(matchup.batter_split_score || 0) * 0.40 +
-    Number(matchup.pitcher_vulnerability_score || 0) * 0.10 +
-    Number(matchup.pitcher_recent_form_score || 0) * 0.05
-  );
-}
-
-function experimentalBoardRows() {
-  return compareBoardHotRows.slice().sort((a, b) => {
-    const aMatchup = findCompareMatchup(a.player_id);
-    const bMatchup = findCompareMatchup(b.player_id);
-
-    const scoreDelta =
-      experimentalScore(bMatchup, b.hot_score) -
-      experimentalScore(aMatchup, a.hot_score);
-
-    if (scoreDelta !== 0) return scoreDelta;
-
-    const hotDelta = Number(b.hot_score || 0) - Number(a.hot_score || 0);
-    if (hotDelta !== 0) return hotDelta;
-
-    return Number(b.hit_rate || 0) - Number(a.hit_rate || 0);
-  });
-}
-
-function experimentalDelta(matchup) {
-  if (!matchup) return null;
-  return experimentalScore(matchup) - Number(matchup.matchup_score || 0);
-}
-
-function renderModelComparePage() {
-  const content = $("modelCompareContent");
-  if (!content) return;
-
-  const rows = experimentalBoardRows();
-  const top = rows[0] || null;
-  const topMatchup = top ? findCompareMatchup(top.player_id) : null;
-  const biggestUp = rows
-    .map((row) => {
-      const matchup = findCompareMatchup(row.player_id);
-      return { row, matchup, delta: experimentalDelta(matchup) };
-    })
-    .filter((x) => x.matchup && Number.isFinite(x.delta))
-    .sort((a, b) => b.delta - a.delta)[0];
-
-  const starter = compareBoardMatchupRows[0] || null;
-  const starterName = pitcherDisplayName(starter);
-  const gameLabel = starter
-    ? `${starter.game_date ? formatGameDate(starter.game_date) : "Next game"} · ${starter.opponent_team_name || "Opponent TBD"}`
-    : "Next matchup loading";
-
-  content.innerHTML = `
-    <section class="control-deck performance-window-deck">
-      <div class="control-group">
-        <div class="control-label">Model Window</div>
-        <div class="segmented" id="compareWindowButtons">
-          ${PERFORMANCE_WINDOWS.map((windowValue) => `
-            <button
-              class="segment ${compareWindow === windowValue ? "active" : ""}"
-              data-compare-window="${windowValue}"
-              type="button"
-            >Last ${windowValue}</button>
-          `).join("")}
-        </div>
-      </div>
-
-      <div class="control-group grow">
-        <div class="control-label">Production Weights</div>
-        <div class="sort-pill">40% form · 35% split · 20% pitcher vulnerability · 5% pitcher form</div>
-      </div>
-
-      <div class="control-group">
-        <div class="control-label">Sort</div>
-        <div class="sort-pill">Matchup Score ↓</div>
-      </div>
-    </section>
-
-    <section class="hero-grid performance-grid">
-      <article class="insight-card primary-insight">
-        <div class="card-topline">
-          <span>Top Production Signal</span>
-          <span>Player Last ${compareWindow} Games</span>
-        </div>
-        <div class="hero-player">${top ? `${heatMeta(top.heat_label).emoji} ${top.full_name}` : "—"}</div>
-        <div class="hero-score">
-          ${
-            top
-              ? `Production ${fmtDecimal(experimentalScore(topMatchup, top.hot_score), 1)} · Current ${topMatchup ? fmtDecimal(topMatchup.matchup_score, 1) : "—"}`
-              : "Matchup Score —"
-          }
-        </div>
-        <p>
-          ${
-            top
-              ? `${top.full_name} leads the reduced-pitcher-weight board. This version rewards recent form and batter split more heavily, while reducing starter-pitcher influence.`
-              : "Loading experimental board..."
-          }
-        </p>
-      </article>
-
-      <article class="insight-card compact">
-        <div class="metric-icon">⚾</div>
-        <div class="metric-label">Game</div>
-        <div class="metric-value">${starter?.opponent_team_name || "—"}</div>
-        <div class="metric-sub">${gameLabel}</div>
-      </article>
-
-      <article class="insight-card compact">
-        <div class="metric-icon">🧪</div>
-        <div class="metric-label">Starter</div>
-        <div class="metric-value">${starterName || "—"}</div>
-        <div class="metric-sub">Production model still includes pitcher at 15% total</div>
-      </article>
-
-      <article class="insight-card compact">
-        <div class="metric-icon">⬆</div>
-        <div class="metric-label">Biggest Boost</div>
-        <div class="metric-value">${biggestUp?.row?.full_name || "—"}</div>
-        <div class="metric-sub">${
-          biggestUp
-            ? `${biggestUp.delta >= 0 ? "+" : ""}${biggestUp.delta.toFixed(1)} vs current score`
-            : "Waiting for matchup scores"
-        }</div>
-      </article>
-    </section>
-
-    <section class="performance-note">
-      <strong>Removed Board.</strong>
-      <span>This page mirrors the main Hot Board, but ranks hitters by the new reduced-pitcher-weight experimental matchup score.</span>
-    </section>
-
-    <section class="board-card">
-      <div class="board-header">
-        <div>
-          <div class="eyebrow">Leaderboard</div>
-          <h2>Removed Board</h2>
-        </div>
-
-        <div class="board-meta">
-          <span>${fmtNum(rows.length)} hitters · Player last ${compareWindow} games</span>
-          <span>Sorted by experimental score</span>
-        </div>
-      </div>
-
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th class="rank">#</th>
-              <th>Heat</th>
-              <th>Player</th>
-              <th class="num">Production</th>
-              <th class="num">Current</th>
-              <th class="num">Δ</th>
-              <th class="num">Hot Score</th>
-              <th class="num">Hit Rate</th>
-              <th class="num">Streak</th>
-              <th class="num">AVG</th>
-              <th class="num">AB</th>
-              <th class="num">H</th>
-              <th class="num">HR</th>
-              <th>Latest</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${rows.length ? rows.map((row, index) => {
-              const heat = heatMeta(row.heat_label);
-              const matchup = findCompareMatchup(row.player_id);
-              const currentScore = matchup ? Number(matchup.matchup_score || 0) : null;
-              const expScore = experimentalScore(matchup, row.hot_score);
-              const delta = matchup ? expScore - currentScore : null;
-              const expTier = matchupTier(expScore);
-              const currentTier = matchupTier(currentScore);
-              const scoreWidth = Math.max(4, Math.min(100, Number(row.hot_score || 0)));
-              const deltaText = delta === null ? "—" : `${delta >= 0 ? "+" : ""}${delta.toFixed(1)}`;
-
-              return `
-                <tr class="clickable-row" data-player-id="${row.player_id}">
-                  <td class="rank"><span class="rank-badge">${index + 1}</span></td>
-
-                  <td>
-                    <span class="heat-badge ${heat.className}">
-                      <span>${heat.emoji}</span>
-                      <span>${heat.label}</span>
-                    </span>
-                  </td>
-
-                  <td>
-                    <div class="player-cell">
-                      <div class="avatar ${handednessBadge(row).toLowerCase()}">${handednessBadge(row)}</div>
-                      <div>
-                        <div class="player-name">${row.full_name}</div>
-                        <div class="player-sub">${row.games_with_hit}/${row.games} games with hit · ${row.extra_base_hits} XBH · click for matchup</div>
-                      </div>
-                    </div>
-                  </td>
-
-                  <td class="num"><span class="matchup-badge ${expTier.className}">${fmtDecimal(expScore, 1)} · ${expTier.label}</span></td>
-                  <td class="num">${
-                    matchup
-                      ? `<span class="matchup-badge ${currentTier.className}">${fmtDecimal(currentScore, 1)}</span>`
-                      : `<span class="matchup-badge matchup-neutral">—</span>`
-                  }</td>
-                  <td class="num">${deltaText}</td>
-
-                  <td class="num">
-                    <div class="score-bar-wrap">
-                      <div class="score-bar">
-                        <div class="score-bar-fill" style="width: ${scoreWidth}%"></div>
-                      </div>
-                      <span class="score-value">${Number(row.hot_score || 0).toFixed(1)}</span>
-                    </div>
-                  </td>
-
-                  <td class="num">${fmtPct(row.hit_rate)}</td>
-                  <td class="num">${fmtNum(row.current_hit_streak)}</td>
-                  <td class="num">${fmtAvg(row.batting_average)}</td>
-                  <td class="num">${fmtNum(row.at_bats)}</td>
-                  <td class="num">${fmtNum(row.hits)}</td>
-                  <td class="num">${fmtNum(row.home_runs)}</td>
-                  <td>${row.latest_game_date || "—"}</td>
-                </tr>
-              `;
-            }).join("") : `<tr><td colspan="14" class="empty-state">Loading experimental hot board...</td></tr>`}
-          </tbody>
-        </table>
-      </div>
-    </section>
-  `;
-
-  document.querySelectorAll("#compareWindowButtons .segment").forEach((button) => {
-    button.addEventListener("click", async () => {
-      const nextWindow = Number(button.dataset.compareWindow);
-      if (!nextWindow || nextWindow === compareWindow) return;
-
-      compareWindow = nextWindow;
-      compareBoardHotRows = [];
-      compareBoardMatchupRows = [];
-      renderModelComparePage();
-      await loadModelCompareData();
-    });
-  });
-}
-
-
-
-
 function normalizeV3HitRow(row) {
   if (!row) return row;
 
@@ -3169,20 +1750,9 @@ function normalizeV3HitRow(row) {
   const hitPct = row.hit_probability_pct ?? (Number.isFinite(probability) ? probability * 100 : null);
   const featurePayload = row.features || {};
   const drawerExplanationText = row.drawer_explanation_text || row.explanation_text || row.explanation || "ML model explanation unavailable.";
-  const normalizedTeamId = Number(row.team_id);
-  const isRedsHitter = typeof row.is_reds_hitter === "boolean"
-    ? row.is_reds_hitter
-    : normalizedTeamId === REDS_TEAM_ID;
-  const redsOpponentTeamName = row.reds_opponent_team_name || (
-    isRedsHitter
-      ? row.pitcher_team_name
-      : row.team_name
-  );
 
   return {
     ...row,
-    is_reds_hitter: isRedsHitter,
-    reds_opponent_team_name: redsOpponentTeamName,
     drawer_explanation_headline: row.drawer_explanation_headline || null,
     drawer_explanation_text: row.drawer_explanation_text || null,
     drawer_positive_tags: Array.isArray(row.drawer_positive_tags) ? row.drawer_positive_tags : [],
@@ -4285,15 +2855,11 @@ function renderMlbHitBoardPage(error = null) {
 }
 
 function showView(viewName) {
-  const hotView = $("hotView");
   const performanceView = $("performanceView");
-  const modelCompareView = $("modelCompareView");
   const mlbView = $("mlbView");
   const marketEdgeView = $("marketEdgeView");
 
-  if (hotView) hotView.classList.toggle("active-view", viewName === "hot");
   if (performanceView) performanceView.classList.toggle("active-view", viewName === "performance");
-  if (modelCompareView) modelCompareView.classList.toggle("active-view", viewName === "compare");
   if (mlbView) mlbView.classList.toggle("active-view", viewName === "mlb");
   if (marketEdgeView) marketEdgeView.classList.toggle("active-view", viewName === "market");
 
@@ -4302,22 +2868,7 @@ function showView(viewName) {
     button.classList.toggle("active", target === viewName);
   });
 
-  if (viewName === "hot") {
-    setText("pageEyebrow", "Selected MLB Game · Team Matchup Intelligence");
-    setText("pageTitle", "Team Hit Board");
-    setText("pageSubtitle", "Game-level V3 hit probabilities, recent form, and matchup intelligence for the selected matchup.");
-
-    if (!hotRows.length) {
-      loadHotData();
-    } else {
-      renderHero();
-      renderKpis();
-      renderMatchupHero();
-      renderTable();
-    }
-  }
-
-  if (viewName === "market") {
+if (viewName === "market") {
     setText("pageEyebrow", "Model vs Market · Hit Prop Edge");
     setText("pageTitle", "Market Edge");
     setText("pageSubtitle", "Today's biggest differences between the V3 hit model and the Hits Over 0.5 market.");
@@ -4341,19 +2892,7 @@ function showView(viewName) {
     }
   }
 
-  if (viewName === "compare") {
-    setText("pageEyebrow", "Production Model · Reduced Pitcher Weight");
-    setText("pageTitle", "Removed Board");
-    setText("pageSubtitle", `Reduced-pitcher-weight matchup board for the ${compareWindow}-game window.`);
-
-    if (!compareBoardHotRows.length || !compareBoardMatchupRows.length) {
-      loadModelCompareData();
-    } else {
-      renderModelComparePage();
-    }
-  }
-
-  if (viewName === "mlb") {
+if (viewName === "mlb") {
     setText("pageEyebrow", "All MLB · Daily Matchup Intelligence");
     setText("pageTitle", "MLB Hit Board");
     setText("pageSubtitle", "Top hitters across MLB by V3 machine-learning hit probability.");
@@ -4387,33 +2926,13 @@ function wireEvents() {
         await loadMarketEdgeData();
       }
 
-      if (button.dataset.view === "compare") {
-        await loadModelCompareData();
-      }
-
-      if (button.dataset.view === "mlb") {
+if (button.dataset.view === "mlb") {
         await loadMlbHitBoardData();
       }
 
-      if (button.dataset.view === "hot") {
-        await loadHotData();
-      }
-    });
+});
   });
 
-  document.querySelectorAll("#windowButtons .segment").forEach((button) => {
-    button.addEventListener("click", () => {
-      document.querySelectorAll("#windowButtons .segment").forEach((btn) => btn.classList.remove("active"));
-      button.classList.add("active");
-      selectedWindow = Number(button.dataset.window);
-      loadHotData();
-    });
-  });
-
-  $("playerSearch")?.addEventListener("input", (event) => {
-    searchTerm = event.target.value;
-    renderTable();
-  });
 
   $("refreshButton")?.addEventListener("click", () => {
     const activeView = document.querySelector(".view.active-view")?.id;
@@ -4423,10 +2942,8 @@ function wireEvents() {
       loadMarketEdgeData();
     } else if (activeView === "performanceView") {
       loadPerformanceData();
-    } else if (activeView === "modelCompareView") {
-      loadModelCompareData();
     } else {
-      loadHotData();
+      loadMlbHitBoardData();
     }
   });
   $("drawerClose")?.addEventListener("click", closeDrawer);
@@ -4445,11 +2962,6 @@ function wireEvents() {
     const row = event.target.closest(".clickable-row");
     if (!row) return;
 
-    if (row.dataset.teamV3PlayerId) {
-      openTeamV3Drawer(row.dataset.teamV3PlayerId);
-      return;
-    }
-
 
     if (row.dataset.marketPlayerId) {
       openMarketEdgeDrawer(row.dataset.marketPlayerId);
@@ -4461,16 +2973,12 @@ function wireEvents() {
       return;
     }
 
-    if (row.dataset.playerId) {
-      openDrawer(row.dataset.playerId);
-    }
   });
 
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") closeDrawer();
   });
 }
-
 
 
 /* =========================================================
