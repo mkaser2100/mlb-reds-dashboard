@@ -1,0 +1,31 @@
+/* =========================================================
+   MLB Hit Board — Phase 5D target-aware pitcher metrics
+   Build: phase5d-target-aware-pitcher-metrics-20260812
+   ========================================================= */
+
+#mlbHitBoardContent .phase5d-metric-card {
+  min-height: 108px;
+}
+
+#mlbHitBoardContent .phase5d-metric-sub {
+  display: block;
+  margin-top: 7px;
+  color: var(--muted, #94a3b8);
+  font-size: 0.68rem;
+  line-height: 1.25;
+  font-weight: 650;
+}
+
+#mlbHitBoardContent .phase5d-target-aware-matchup .matchup-score-pill {
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  #mlbHitBoardContent .phase5d-metric-card {
+    min-height: 96px;
+  }
+
+  #mlbHitBoardContent .phase5d-metric-sub {
+    font-size: 0.64rem;
+  }
+}
