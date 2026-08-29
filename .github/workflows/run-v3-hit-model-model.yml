@@ -8,16 +8,6 @@ on:
         required: false
         type: string
 
-  # Run V3 only after today's Statcast enhancement features finish refreshing.
-  workflow_run:
-    workflows: ["Refresh MLB V3 Features"]
-    types: [completed]
-
-  schedule:
-    # Backup scheduled run at 12:45 UTC / 8:45 AM EDT.
-    # This provides extra buffer after the Statcast and V3 feature refresh workflows.
-    - cron: "45 12 * * *"
-
 permissions:
   actions: read
   contents: read
@@ -41,7 +31,8 @@ jobs:
           script: |
             const automaticEvents = new Set(["schedule", "workflow_run"]);
 
-            // Manual runs are always allowed, including intentional same-day reruns.
+            // Manual/dispatch runs are always allowed, including intentional same-day reruns.
+            // Automatic orchestration is handled by run-v3-hit-model-when-ready.yml.
             if (!automaticEvents.has(context.eventName)) {
               core.info(`Event ${context.eventName} is not automatic; allowing run.`);
               core.setOutput("should_run", "true");
@@ -109,8 +100,8 @@ jobs:
     needs: once-daily-gate
     runs-on: ubuntu-latest
 
-    # Run only when the once-daily gate allows it and the dependency succeeded.
-    if: ${{ needs.once-daily-gate.outputs.should_run == 'true' && (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success') }}
+    # Automatic readiness is handled upstream. Manual/dispatch runs remain available.
+    if: ${{ needs.once-daily-gate.outputs.should_run == 'true' }}
 
     env:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -194,9 +185,6 @@ jobs:
               datetime.fromisoformat(target_date).date() - timedelta(days=1)
           ).isoformat()
 
-          # Default fail-open for transient 522s. This prevents a Supabase/Cloudflare
-          # timeout from blocking a same-day V3 rerun. Set this repo/env var to true
-          # later if you want the workflow to fail closed.
           strict_previous_actuals_check = (
               os.getenv("STRICT_PREVIOUS_ACTUALS_CHECK", "false").lower() == "true"
           )
@@ -206,10 +194,6 @@ jobs:
           print(f"Previous actuals date: {previous_date}")
 
           def previous_predictions_query():
-              # Do NOT query v_mlb_ml_v3_actuals_load_status here.
-              # That view can become expensive because it may traverse active/ranked
-              # presentation views. This preflight only needs the base active
-              # prediction rows for one target/date.
               return (
                   supabase
                   .table("mlb_ml_predictions_v3")
@@ -326,16 +310,13 @@ jobs:
 
           def execute_with_retry(query_factory, attempts=5, first_delay_seconds=3):
               delay = first_delay_seconds
-
               for attempt in range(1, attempts + 1):
                   try:
                       return query_factory().execute()
                   except Exception as exc:
                       transient = is_transient_supabase_error(exc)
-
                       if not transient or attempt == attempts:
                           raise
-
                       print(
                           f"Transient Supabase/PostgREST error on attempt "
                           f"{attempt}/{attempts}: {exc}"
@@ -357,9 +338,6 @@ jobs:
           print(f"Expected V3 prediction date: {target_date}")
 
           def current_feature_query():
-              # This is an existence check, not a row-count report.
-              # Avoid count="exact" here because PostgREST would count every row
-              # produced by the wide feature view before returning one row.
               return (
                   supabase
                   .table("v_mlb_ml_today_features_v3_wide")
@@ -582,7 +560,6 @@ jobs:
           import os
           from datetime import datetime
           from zoneinfo import ZoneInfo
-
           from supabase import create_client
 
           TARGET_NAME = "hit_1plus"
@@ -631,9 +608,6 @@ jobs:
 
           model_run_id = next(iter(model_run_ids))
 
-          # Fetch every contribution row. Supabase/PostgREST commonly caps a
-          # single response at 1,000 rows, while a normal V3 run can produce
-          # 10,000+ rows (predictions x 110 features).
           contribution_rows = []
           page_size = 1000
           offset = 0
@@ -660,6 +634,7 @@ jobs:
               if len(page_rows) < page_size:
                   break
               offset += page_size
+
           explained_prediction_ids = {
               row.get("prediction_id")
               for row in contribution_rows
@@ -738,7 +713,6 @@ jobs:
           import os
           from datetime import datetime
           from zoneinfo import ZoneInfo
-
           from supabase import create_client
 
           supabase = create_client(
@@ -840,9 +814,6 @@ jobs:
           CACHE_NAME = "daily_v3_board"
           RPC_NAME = "refresh_mlb_v3_hit_board_serving_cache"
 
-          # PostgREST/Cloudflare may terminate a long HTTP request before PostgreSQL
-          # finishes. The refresh function itself is protected by an advisory lock
-          # and can continue running after the client receives a 504.
           POSTGREST_TIMEOUT_SECONDS = 300
           POLL_INTERVAL_SECONDS = 15
           MAX_WAIT_MINUTES = 30
@@ -997,7 +968,6 @@ jobs:
                       state_status = str(state.get("refresh_status") or "").lower()
                       state_message = str(state.get("refresh_message") or "")
 
-                      # A committed error for the target date should fail immediately.
                       if state_date == target_date and state_status == "error":
                           raise RuntimeError(
                               "Database cache refresh reported an error for "
@@ -1035,7 +1005,6 @@ jobs:
           pre_state = read_cache_state()
           print(f"Pre-refresh cache state: {pre_state}")
 
-          # Idempotent reruns should exit without creating another expensive refresh.
           if ready_for_target(pre_state):
               print("Target-date cache is already ready; no refresh is required.")
               validate_ready_state(pre_state)
@@ -1048,8 +1017,6 @@ jobs:
                   supabase
                   .rpc(
                       RPC_NAME,
-                      # Do not force an unnecessary rebuild when the source has not
-                      # changed. A new prediction date still refreshes normally.
                       {"p_force": False},
                   )
                   .execute()
@@ -1095,8 +1062,6 @@ jobs:
                   f"{payload}"
               )
 
-          # Validate from the durable state table rather than trusting only the RPC
-          # response. This catches partial or stale publications.
           state = read_cache_state()
           print(f"Post-refresh cache state: {state}")
           validate_ready_state(state)
