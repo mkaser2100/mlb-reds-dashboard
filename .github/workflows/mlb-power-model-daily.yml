@@ -27,23 +27,34 @@ on:
         default: false
         type: boolean
 
-  # Backup scheduled run only. Primary freshness protection is the
-  # cache refresh step that runs immediately after successful scoring.
+  # PRIMARY TRIGGER: run as soon as the current-day V3 feature refresh finishes.
+  # This removes GitHub cron latency from the critical path.
+  workflow_run:
+    workflows:
+      - "Refresh MLB V3 Features"
+    types: [completed]
+
+  # REDUNDANT FALLBACKS.
+  # During EDT these target 8:37 AM, 9:07 AM, and 9:37 AM Eastern.
   schedule:
-    - cron: "15 12 * * *"
+    - cron: "37 12 * * *"
+    - cron: "7 13 * * *"
+    - cron: "37 13 * * *"
 
 concurrency:
   group: mlb-power-model-daily-${{ github.event.inputs.run_date || 'today' }}
   cancel-in-progress: false
 
 permissions:
+  actions: read
   contents: read
 
 jobs:
   score-power-models:
     name: Score HR + Total Bases shadow models
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
 
     env:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -63,10 +74,8 @@ jobs:
           python -m pip install --upgrade pip
           pip install supabase
 
-      - name: Compile scorer
-        run: python -m py_compile scripts/score_mlb_power_models.py
-
-      - name: Refresh and validate Phase 1 power features
+      - name: Decide whether this run should score
+        id: gate
         shell: bash
         run: |
           set -euo pipefail
@@ -76,96 +85,246 @@ jobs:
           from zoneinfo import ZoneInfo
           from supabase import create_client
 
-          supabase = create_client(
-              os.environ["SUPABASE_URL"],
-              os.environ["SUPABASE_SERVICE_ROLE_KEY"],
-          )
-
+          event_name = "${{ github.event_name }}"
           requested = "${{ github.event.inputs.run_date || '' }}".strip()
           run_date = requested or datetime.now(
               ZoneInfo("America/New_York")
           ).date().isoformat()
 
-          print(f"Refreshing Phase 1 power features for {run_date}...")
-
-          refresh = supabase.rpc(
-              "refresh_mlb_ml_batter_power_features",
-              {"p_game_date": run_date},
-          ).execute()
-
-          print("Power feature refresh result:")
-          print(refresh.data)
-
-          validation = (
-              supabase.table("mlb_ml_batter_power_features_daily")
-              .select(
-                  "player_id,environment_point_in_time_safe",
-                  count="exact",
-              )
-              .eq("game_date", run_date)
-              .limit(1000)
-              .execute()
-          )
-
-          rows = validation.data or []
-          row_count = (
-              validation.count
-              if validation.count is not None
-              else len(rows)
-          )
-
-          if row_count <= 0:
-              raise RuntimeError(
-                  f"Power feature refresh produced no rows for {run_date}"
+          # Manual runs are intentional and remain user-controlled.
+          if event_name == "workflow_dispatch":
+              should_run = True
+              reason = "manual dispatch"
+          else:
+              supabase = create_client(
+                  os.environ["SUPABASE_URL"],
+                  os.environ["SUPABASE_SERVICE_ROLE_KEY"],
               )
 
-          unsafe_rows = sum(
-              1
-              for row in rows
-              if row.get("environment_point_in_time_safe") is not True
-          )
+              # Refresh status if possible. A stale/missing status record must
+              # not prevent a needed automatic recovery.
+              try:
+                  supabase.rpc(
+                      "refresh_mlb_ml_batter_pipeline_status",
+                      {"p_run_date": run_date},
+                  ).execute()
+              except Exception as exc:
+                  print(f"Pipeline status refresh warning: {exc}")
+
+              response = (
+                  supabase.table("mlb_ml_batter_pipeline_status")
+                  .select(
+                      "target_name,status,expected_player_games,"
+                      "prediction_rows,missing_prediction_rows"
+                  )
+                  .eq("run_date", run_date)
+                  .in_(
+                      "target_name",
+                      ["home_run_1plus", "total_bases_2plus"],
+                  )
+                  .execute()
+              )
+
+              by_target = {
+                  row["target_name"]: row
+                  for row in (response.data or [])
+              }
+
+              def target_complete(target):
+                  row = by_target.get(target) or {}
+                  expected = int(row.get("expected_player_games") or 0)
+                  predictions = int(row.get("prediction_rows") or 0)
+                  missing = int(row.get("missing_prediction_rows") or 0)
+                  return (
+                      row.get("status") == "complete"
+                      and expected > 0
+                      and predictions == expected
+                      and missing == 0
+                  )
+
+              already_complete = all(
+                  target_complete(target)
+                  for target in (
+                      "home_run_1plus",
+                      "total_bases_2plus",
+                  )
+              )
+
+              should_run = not already_complete
+              reason = (
+                  "both targets already complete; protecting existing predictions"
+                  if already_complete
+                  else "automatic refresh required"
+              )
+
+              print("Current pipeline status:")
+              for target in (
+                  "home_run_1plus",
+                  "total_bases_2plus",
+              ):
+                  print(f"  {target}: {by_target.get(target)}")
 
           print(
-              f"Phase 1 power features ready for {run_date}: "
-              f"{row_count} rows"
+              f"Gate decision | event={event_name} | "
+              f"date={run_date} | should_run={should_run} | reason={reason}"
           )
 
-          if unsafe_rows:
-              raise RuntimeError(
-                  f"Power feature validation found {unsafe_rows} rows "
-                  f"without point-in-time-safe environment data for {run_date}"
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+              fh.write(f"should_run={'true' if should_run else 'false'}\n")
+              fh.write(f"run_date={run_date}\n")
+          PY
+
+      - name: Compile scorer
+        if: ${{ steps.gate.outputs.should_run == 'true' }}
+        run: python -m py_compile scripts/score_mlb_power_models.py
+
+      - name: Refresh and validate Phase 1 power features
+        if: ${{ steps.gate.outputs.should_run == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os
+          import time
+          from supabase import create_client
+
+          run_date = "${{ steps.gate.outputs.run_date }}"
+          supabase = create_client(
+              os.environ["SUPABASE_URL"],
+              os.environ["SUPABASE_SERVICE_ROLE_KEY"],
+          )
+
+          max_attempts = 4
+          sleep_seconds = 90
+          last_problem = "not attempted"
+
+          for attempt in range(1, max_attempts + 1):
+              print(
+                  f"Phase 1 power feature attempt "
+                  f"{attempt}/{max_attempts} for {run_date}"
               )
 
-          print(
-              f"Point-in-time environment validation passed for "
-              f"{len(rows)} sampled/returned rows."
-          )
+              try:
+                  refresh = supabase.rpc(
+                      "refresh_mlb_ml_batter_power_features",
+                      {"p_game_date": run_date},
+                  ).execute()
+                  print("Power feature refresh result:")
+                  print(refresh.data)
+
+                  validation = (
+                      supabase.table("mlb_ml_batter_power_features_daily")
+                      .select(
+                          "player_id,environment_point_in_time_safe",
+                          count="exact",
+                      )
+                      .eq("game_date", run_date)
+                      .limit(1000)
+                      .execute()
+                  )
+
+                  rows = validation.data or []
+                  row_count = (
+                      validation.count
+                      if validation.count is not None
+                      else len(rows)
+                  )
+                  unsafe_rows = sum(
+                      1
+                      for row in rows
+                      if row.get("environment_point_in_time_safe") is not True
+                  )
+
+                  coverage_response = supabase.rpc(
+                      "validate_mlb_power_population_coverage",
+                      {"p_run_date": run_date},
+                  ).execute()
+                  coverage = coverage_response.data or {}
+                  if isinstance(coverage, list):
+                      coverage = coverage[0] if coverage else {}
+
+                  eligible_sides = int(
+                      coverage.get("eligible_sides") or 0
+                  )
+                  represented_sides = int(
+                      coverage.get("represented_sides") or 0
+                  )
+                  missing_sides = int(
+                      coverage.get("missing_sides") or 0
+                  )
+
+                  print(
+                      f"Validation | rows={row_count} "
+                      f"unsafe_environment={unsafe_rows} "
+                      f"eligible_sides={eligible_sides} "
+                      f"represented_sides={represented_sides} "
+                      f"missing_sides={missing_sides}"
+                  )
+
+                  if (
+                      row_count > 0
+                      and unsafe_rows == 0
+                      and eligible_sides > 0
+                      and missing_sides == 0
+                  ):
+                      print(
+                          f"Phase 1 power features are ready for {run_date}."
+                      )
+                      break
+
+                  last_problem = (
+                      f"rows={row_count}, "
+                      f"unsafe_environment={unsafe_rows}, "
+                      f"eligible_sides={eligible_sides}, "
+                      f"represented_sides={represented_sides}, "
+                      f"missing_sides={missing_sides}"
+                  )
+
+              except Exception as exc:
+                  last_problem = repr(exc)
+                  print(f"Attempt {attempt} failed: {last_problem}")
+
+              if attempt < max_attempts:
+                  print(
+                      f"Prerequisites are not ready yet; "
+                      f"retrying in {sleep_seconds}s."
+                  )
+                  time.sleep(sleep_seconds)
+              else:
+                  raise RuntimeError(
+                      f"Phase 1 power features were not ready after "
+                      f"{max_attempts} attempts for {run_date}: {last_problem}"
+                  )
           PY
 
       - name: Score shadow models
+        if: ${{ steps.gate.outputs.should_run == 'true' }}
         shell: bash
         run: |
           set -euo pipefail
           ARGS=()
 
-          if [[ -n "${{ github.event.inputs.run_date || '' }}" ]]; then
-            ARGS+=(--date "${{ github.event.inputs.run_date }}")
-          fi
-
+          ARGS+=(--date "${{ steps.gate.outputs.run_date }}")
           ARGS+=(--target "${{ github.event.inputs.target || 'all' }}")
 
           if [[ "${{ github.event.inputs.dry_run || 'false' }}" == "true" ]]; then
             ARGS+=(--dry-run)
           fi
 
-          if [[ "${{ github.event.inputs.allow_after_start || 'false' }}" == "true" ]]; then
+          # Automatic events are allowed to recover from GitHub scheduler /
+          # runner latency. The database quality audit still records
+          # prediction_not_pregame for any already-started game. The gate
+          # above prevents a late fallback from overwriting a complete run.
+          if [[ "${{ github.event_name }}" != "workflow_dispatch" ]]; then
+            ARGS+=(--allow-after-start)
+          elif [[ "${{ github.event.inputs.allow_after_start || 'false' }}" == "true" ]]; then
             ARGS+=(--allow-after-start)
           fi
 
           python scripts/score_mlb_power_models.py "${ARGS[@]}"
 
       - name: Refresh batter prediction board cache
-        if: ${{ github.event.inputs.dry_run != 'true' }}
+        if: ${{ steps.gate.outputs.should_run == 'true' && github.event.inputs.dry_run != 'true' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -178,12 +337,10 @@ jobs:
               os.environ["SUPABASE_SERVICE_ROLE_KEY"],
           )
 
-          run_date = "${{ github.event.inputs.run_date || '' }}".strip()
-          params = {"p_run_date": run_date} if run_date else {}
-
+          run_date = "${{ steps.gate.outputs.run_date }}"
           result = supabase.rpc(
               "refresh_mlb_batter_prediction_board_cache",
-              params,
+              {"p_run_date": run_date},
           ).execute()
 
           print("Batter prediction board cache refresh result:")
@@ -196,14 +353,12 @@ jobs:
           PY
 
       - name: Validate HR and Total Bases cache freshness
-        if: ${{ github.event.inputs.dry_run != 'true' }}
+        if: ${{ steps.gate.outputs.should_run == 'true' && github.event.inputs.dry_run != 'true' }}
         shell: bash
         run: |
           set -euo pipefail
           python - <<'PY'
           import os
-          from datetime import datetime
-          from zoneinfo import ZoneInfo
           from supabase import create_client
 
           supabase = create_client(
@@ -211,14 +366,15 @@ jobs:
               os.environ["SUPABASE_SERVICE_ROLE_KEY"],
           )
 
-          requested = "${{ github.event.inputs.run_date || '' }}".strip()
-          run_date = requested or datetime.now(ZoneInfo("America/New_York")).date().isoformat()
-
+          run_date = "${{ steps.gate.outputs.run_date }}"
           response = (
               supabase.table("mlb_batter_prediction_board_cache")
               .select("target_name,prediction_run_date,player_id")
               .eq("prediction_run_date", run_date)
-              .in_("target_name", ["home_run_1plus", "total_bases_2plus"])
+              .in_(
+                  "target_name",
+                  ["home_run_1plus", "total_bases_2plus"],
+              )
               .execute()
           )
 
@@ -234,9 +390,30 @@ jobs:
 
           print(f"Cache validation for {run_date}: {counts}")
 
-          missing = [target for target, count in counts.items() if count == 0]
+          missing = [
+              target
+              for target, count in counts.items()
+              if count == 0
+          ]
           if missing:
               raise RuntimeError(
-                  f"Cache freshness validation failed for {run_date}; missing targets: {missing}"
+                  f"Cache freshness validation failed for {run_date}; "
+                  f"missing targets: {missing}"
               )
           PY
+
+      - name: Write workflow summary
+        if: always()
+        run: |
+          {
+            echo "## MLB Power Model Daily"
+            echo
+            echo "- Trigger: \`${{ github.event_name }}\`"
+            echo "- Run date: \`${{ steps.gate.outputs.run_date || github.event.inputs.run_date || 'today ET' }}\`"
+            echo "- Gate decision: \`${{ steps.gate.outputs.should_run || 'not evaluated' }}\`"
+            echo "- Primary dependency: \`Refresh MLB V3 Features\`"
+            echo "- Existing-complete overwrite protection: \`enabled\`"
+            echo "- Automatic late-recovery path: \`enabled and audited\`"
+            echo "- Phase 1 feature retries: \`4 x 90s\`"
+            echo "- Fallback schedules: \`12:37, 13:07, 13:37 UTC\`"
+          } >> "$GITHUB_STEP_SUMMARY"
