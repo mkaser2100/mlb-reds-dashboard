@@ -22,9 +22,6 @@ POLL_TIMEOUT_SECONDS = 15 * 60
 LOCK_RETRY_DELAY_SECONDS = 60
 MAX_LOCK_TIMEOUT_RETRIES = 1
 
-# The V3 wide feature view also depends on the daily V2 snapshot created by
-# Phase 1. The feature-refresh workflow can finish before that snapshot exists,
-# so recover it here before declaring the feature workflow successful.
 V2_PREREQ_ATTEMPTS = 3
 V2_PREREQ_RETRY_DELAY_SECONDS = 60
 
@@ -117,9 +114,7 @@ def ensure_v2_feature_source(
     game_date: date,
 ) -> dict[str, Any]:
     """Guarantee the V2 snapshot / wide V3 source exists before feature success."""
-    status = get_pipeline_status(
-        session, supabase_url, headers, game_date
-    )
+    status = get_pipeline_status(session, supabase_url, headers, game_date)
     print("V3 prerequisite pipeline status:")
     print(json.dumps(status, default=str))
 
@@ -133,6 +128,21 @@ def ensure_v2_feature_source(
 
     feature_rows = int(status.get("feature_row_count") or 0)
     v2_rows = int(status.get("v2_prediction_row_count") or 0)
+    today_eastern = datetime.now(EASTERN).date()
+
+    # FIX: historical recovery must not require feature_rows > 0 before the
+    # feature-refresh RPC runs. Existing historical V2 predictions are enough.
+    # The V2 snapshot RPC is today-only and cannot rebuild prior dates.
+    if game_date < today_eastern and v2_rows > 0:
+        print(
+            "Historical V2 prerequisite already ready: "
+            f"game_date={game_date.isoformat()}, "
+            f"v2_prediction_rows={v2_rows}, "
+            f"feature_rows={feature_rows}. "
+            "Proceeding to V3 enhancement refresh without attempting "
+            "the today-only V2 snapshot RPC."
+        )
+        return status
 
     if feature_rows > 0 and v2_rows > 0:
         print(
@@ -158,14 +168,10 @@ def ensure_v2_feature_source(
         )
         last_payload = normalize_rpc_object(snapshot_payload)
 
-        print(
-            f"V2 prerequisite snapshot attempt {attempt}/{V2_PREREQ_ATTEMPTS}:"
-        )
+        print(f"V2 prerequisite snapshot attempt {attempt}/{V2_PREREQ_ATTEMPTS}:")
         print(json.dumps(last_payload, default=str))
 
-        status = get_pipeline_status(
-            session, supabase_url, headers, game_date
-        )
+        status = get_pipeline_status(session, supabase_url, headers, game_date)
         feature_rows = int(status.get("feature_row_count") or 0)
         v2_rows = int(status.get("v2_prediction_row_count") or 0)
 
@@ -430,10 +436,6 @@ def main() -> int:
     session = requests.Session()
 
     try:
-        # Critical prerequisite: enhancement-family completion alone is not
-        # sufficient. The V3 wide feature view also requires today's V2
-        # snapshot. Recover that prerequisite before an early "already complete"
-        # return can occur.
         ensure_v2_feature_source(
             session,
             supabase_url,
@@ -508,11 +510,9 @@ def main() -> int:
                 print(
                     json.dumps(
                         {
-                            "status": "complete",
-                            "completion_source": "rpc_response",
+                            "status": "submitted",
                             "game_date": args.game_date.isoformat(),
-                            "attempt": attempt + 1,
-                            "result": payload,
+                            "response": payload,
                         },
                         default=str,
                         indent=2,
@@ -521,92 +521,86 @@ def main() -> int:
                 return 0
 
             if is_lock_timeout_response(response):
+                if attempt < MAX_LOCK_TIMEOUT_RETRIES:
+                    print(
+                        "V3 feature refresh hit PostgreSQL lock timeout. "
+                        f"Waiting {LOCK_RETRY_DELAY_SECONDS}s, re-checking "
+                        "completion, then retrying once...",
+                        file=sys.stderr,
+                    )
+                    time.sleep(LOCK_RETRY_DELAY_SECONDS)
+
+                    complete, runs = refresh_already_complete(
+                        session,
+                        supabase_url,
+                        headers,
+                        args.game_date,
+                    )
+                    if complete:
+                        print(
+                            json.dumps(
+                                {
+                                    "status": "complete",
+                                    "completion_source": "lock_timeout_recheck",
+                                    "game_date": args.game_date.isoformat(),
+                                    "refresh_runs": summarize_runs(runs),
+                                },
+                                default=str,
+                                indent=2,
+                            )
+                        )
+                        return 0
+                    continue
+
+                response.raise_for_status()
+
+            if response.status_code >= 500:
+                ambiguous_error = requests.HTTPError(
+                    f"HTTP {response.status_code}: {response.text[:1000]}"
+                )
                 print(
-                    "Refresh RPC hit PostgreSQL lock timeout (55P03). "
-                    "This attempt failed; it is safe to re-check and retry.",
+                    "Refresh RPC returned an ambiguous server response; "
+                    "the database may still be running it. "
+                    f"Status={response.status_code}",
                     file=sys.stderr,
                 )
+                break
 
-                if attempt >= MAX_LOCK_TIMEOUT_RETRIES:
-                    raise RuntimeError(
-                        "V3 feature refresh hit PostgreSQL lock timeout (55P03) "
-                        "again after one retry. Another process is still contending "
-                        "for the feature refresh lock."
-                    )
+            response.raise_for_status()
 
-                print(
-                    f"Waiting {LOCK_RETRY_DELAY_SECONDS}s before checking whether "
-                    "another worker completed the refresh..."
-                )
-                time.sleep(LOCK_RETRY_DELAY_SECONDS)
-
-                complete, completed_runs = refresh_already_complete(
-                    session,
-                    supabase_url,
-                    headers,
-                    args.game_date,
-                )
-                if complete:
-                    print(
-                        json.dumps(
-                            {
-                                "status": "complete",
-                                "completion_source": "other_worker_after_lock_timeout",
-                                "game_date": args.game_date.isoformat(),
-                                "refresh_runs": summarize_runs(completed_runs),
-                            },
-                            default=str,
-                            indent=2,
-                        )
-                    )
-                    return 0
-
-                print("No complete refresh found. Retrying the RPC once.")
-                continue
-
-            if 400 <= response.status_code < 500 and response.status_code != 429:
-                raise RuntimeError(
-                    "Feature refresh was rejected and was not submitted again "
-                    f"({response.status_code}): {response.text}"
-                )
-
-            ambiguous_error = RuntimeError(
-                f"RPC returned HTTP {response.status_code}: {response.text}"
+        if ambiguous_error is not None:
+            runs = poll_for_completion(
+                session,
+                supabase_url,
+                headers,
+                args.game_date,
+                baseline_run_id,
             )
             print(
-                "Refresh RPC returned an ambiguous server/gateway response. "
-                "The RPC will not be retried; polling committed refresh records. "
-                f"Response: {ambiguous_error}",
-                file=sys.stderr,
+                json.dumps(
+                    {
+                        "status": "complete",
+                        "completion_source": "post_error_poll",
+                        "game_date": args.game_date.isoformat(),
+                        "ambiguous_error": str(ambiguous_error),
+                        "refresh_runs": summarize_runs(runs),
+                    },
+                    default=str,
+                    indent=2,
+                )
             )
-            break
+            return 0
 
-        completed_runs = poll_for_completion(
-            session,
-            supabase_url,
-            headers,
-            args.game_date,
-            baseline_run_id,
+        raise RuntimeError(
+            "V3 feature refresh ended without a successful response or an "
+            "ambiguous error to reconcile."
         )
-
-        print(
-            json.dumps(
-                {
-                    "status": "complete",
-                    "completion_source": "refresh_run_poll",
-                    "game_date": args.game_date.isoformat(),
-                    "rpc_error": str(ambiguous_error) if ambiguous_error else None,
-                    "refresh_runs": summarize_runs(completed_runs),
-                },
-                default=str,
-                indent=2,
-            )
-        )
-        return 0
 
     except Exception as exc:
         print(f"V3 feature refresh failed: {exc}", file=sys.stderr)
         return 1
+    finally:
+        session.close()
 
 
 if __name__ == "__main__":
