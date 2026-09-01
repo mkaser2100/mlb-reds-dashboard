@@ -130,9 +130,6 @@ def ensure_v2_feature_source(
     v2_rows = int(status.get("v2_prediction_row_count") or 0)
     today_eastern = datetime.now(EASTERN).date()
 
-    # FIX: historical recovery must not require feature_rows > 0 before the
-    # feature-refresh RPC runs. Existing historical V2 predictions are enough.
-    # The V2 snapshot RPC is today-only and cannot rebuild prior dates.
     if game_date < today_eastern and v2_rows > 0:
         print(
             "Historical V2 prerequisite already ready: "
@@ -198,12 +195,7 @@ def ensure_v2_feature_source(
     )
 
 
-def fetch_refresh_runs(
-    session: requests.Session,
-    supabase_url: str,
-    headers: dict[str, str],
-    game_date: date,
-) -> list[dict[str, Any]]:
+def fetch_refresh_runs(session, supabase_url, headers, game_date):
     endpoint = f"{supabase_url}/rest/v1/mlb_ml_feature_refresh_runs"
     params = {
         "select": (
@@ -215,7 +207,6 @@ def fetch_refresh_runs(
         "order": "refresh_run_id.desc",
         "limit": "50",
     }
-
     response = session.get(
         endpoint,
         headers=headers,
@@ -224,47 +215,31 @@ def fetch_refresh_runs(
     )
     response.raise_for_status()
     payload = response.json()
-
     if not isinstance(payload, list):
-        raise RuntimeError(
-            "Unexpected refresh-run status response; expected a JSON array."
-        )
-
+        raise RuntimeError("Unexpected refresh-run status response; expected a JSON array.")
     return payload
 
 
-def baseline_refresh_run_id(rows: list[dict[str, Any]]) -> int:
-    ids = [
-        int(row["refresh_run_id"])
-        for row in rows
-        if row.get("refresh_run_id") is not None
-    ]
+def baseline_refresh_run_id(rows):
+    ids = [int(row["refresh_run_id"]) for row in rows if row.get("refresh_run_id") is not None]
     return max(ids, default=0)
 
 
-def latest_runs_by_family(
-    rows: list[dict[str, Any]],
-    *,
-    newer_than_run_id: int | None = None,
-) -> dict[str, dict[str, Any]]:
-    latest: dict[str, dict[str, Any]] = {}
-
+def latest_runs_by_family(rows, *, newer_than_run_id=None):
+    latest = {}
     for row in rows:
         family = str(row.get("feature_family") or "")
         run_id = int(row.get("refresh_run_id") or 0)
-
         if family not in EXPECTED_FAMILIES:
             continue
         if newer_than_run_id is not None and run_id <= newer_than_run_id:
             continue
-
         if family not in latest:
             latest[family] = row
-
     return latest
 
 
-def summarize_runs(runs: dict[str, dict[str, Any]]) -> dict[str, Any]:
+def summarize_runs(runs):
     return {
         family: {
             "refresh_run_id": row.get("refresh_run_id"),
@@ -281,9 +256,7 @@ def summarize_runs(runs: dict[str, dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def all_expected_families_complete(
-    rows: list[dict[str, Any]],
-) -> tuple[bool, dict[str, dict[str, Any]]]:
+def all_expected_families_complete(rows):
     latest = latest_runs_by_family(rows)
     complete = {
         family
@@ -293,17 +266,7 @@ def all_expected_families_complete(
     return complete == set(EXPECTED_FAMILIES), latest
 
 
-def refresh_already_complete(
-    session: requests.Session,
-    supabase_url: str,
-    headers: dict[str, str],
-    game_date: date,
-) -> tuple[bool, dict[str, dict[str, Any]]]:
-    rows = fetch_refresh_runs(session, supabase_url, headers, game_date)
-    return all_expected_families_complete(rows)
-
-
-def is_lock_timeout_response(response: requests.Response) -> bool:
+def is_lock_timeout_response(response):
     text = response.text.lower()
     return (
         response.status_code >= 500
@@ -317,48 +280,22 @@ def is_lock_timeout_response(response: requests.Response) -> bool:
 
 
 def poll_for_completion(
-    session: requests.Session,
-    supabase_url: str,
-    headers: dict[str, str],
-    game_date: date,
-    baseline_run_id: int,
+    session,
+    supabase_url,
+    headers,
+    game_date,
+    baseline_run_id,
     *,
-    timeout_seconds: int = POLL_TIMEOUT_SECONDS,
-    interval_seconds: int = POLL_INTERVAL_SECONDS,
-) -> dict[str, dict[str, Any]]:
+    timeout_seconds=POLL_TIMEOUT_SECONDS,
+    interval_seconds=POLL_INTERVAL_SECONDS,
+):
     deadline = time.monotonic() + timeout_seconds
-    last_summary: dict[str, Any] = {}
-    transient_status_errors = 0
-
-    print(
-        "The RPC response was ambiguous. Polling "
-        "mlb_ml_feature_refresh_runs for committed completion records..."
-    )
-    print(
-        f"Required families: {', '.join(EXPECTED_FAMILIES)}; "
-        f"baseline refresh_run_id={baseline_run_id}"
-    )
+    last_summary = {}
 
     while time.monotonic() < deadline:
-        try:
-            rows = fetch_refresh_runs(
-                session,
-                supabase_url,
-                headers,
-                game_date,
-            )
-            runs = latest_runs_by_family(rows, newer_than_run_id=baseline_run_id)
-            last_summary = summarize_runs(runs)
-            transient_status_errors = 0
-        except (requests.RequestException, ValueError, RuntimeError) as exc:
-            transient_status_errors += 1
-            print(
-                "Status poll failed "
-                f"({transient_status_errors} consecutive failure(s)): {exc}",
-                file=sys.stderr,
-            )
-            time.sleep(interval_seconds)
-            continue
+        rows = fetch_refresh_runs(session, supabase_url, headers, game_date)
+        runs = latest_runs_by_family(rows, newer_than_run_id=baseline_run_id)
+        last_summary = summarize_runs(runs)
 
         failed = {
             family: row
@@ -376,21 +313,6 @@ def poll_for_completion(
             for family, row in runs.items()
             if str(row.get("status") or "").lower() == "complete"
         }
-
-        missing = [family for family in EXPECTED_FAMILIES if family not in runs]
-        incomplete = [
-            family
-            for family, row in runs.items()
-            if str(row.get("status") or "").lower() != "complete"
-        ]
-
-        print(
-            "Refresh status: "
-            f"complete={sorted(complete)}, "
-            f"missing={missing}, "
-            f"incomplete={incomplete}"
-        )
-
         if complete == set(EXPECTED_FAMILIES):
             return runs
 
@@ -403,12 +325,7 @@ def poll_for_completion(
     )
 
 
-def submit_refresh_once(
-    session: requests.Session,
-    endpoint: str,
-    headers: dict[str, str],
-    game_date: date,
-) -> requests.Response:
+def submit_refresh_once(session, endpoint, headers, game_date):
     return session.post(
         endpoint,
         headers={**headers, "Prefer": "return=representation"},
@@ -423,15 +340,10 @@ def main() -> int:
     service_role_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 
     if not supabase_url or not service_role_key:
-        print(
-            "Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY.",
-            file=sys.stderr,
-        )
+        print("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY.", file=sys.stderr)
         return 1
 
-    endpoint = (
-        f"{supabase_url}/rest/v1/rpc/refresh_mlb_v3_enhancement_features"
-    )
+    endpoint = f"{supabase_url}/rest/v1/rpc/refresh_mlb_v3_enhancement_features"
     headers = build_headers(service_role_key)
     session = requests.Session()
 
@@ -450,20 +362,32 @@ def main() -> int:
             args.game_date,
         )
 
+        pipeline_status = get_pipeline_status(
+            session,
+            supabase_url,
+            headers,
+            args.game_date,
+        )
+        feature_rows = int(pipeline_status.get("feature_row_count") or 0)
+        v2_rows = int(pipeline_status.get("v2_prediction_row_count") or 0)
+
         already_complete, existing_runs = all_expected_families_complete(
             baseline_rows
         )
-        if already_complete:
+
+        if already_complete and feature_rows > 0 and v2_rows > 0:
             print(
                 json.dumps(
                     {
                         "status": "complete",
                         "completion_source": "preexisting_refresh_runs",
                         "game_date": args.game_date.isoformat(),
+                        "feature_rows": feature_rows,
+                        "v2_prediction_rows": v2_rows,
                         "message": (
-                            "The V2 prerequisite source and all required V3 "
-                            "enhancement families are already complete; no "
-                            "enhancement refresh RPC was submitted."
+                            "The V2 prerequisite, wide V3 feature source, and "
+                            "all required enhancement families are complete; "
+                            "no enhancement refresh RPC was submitted."
                         ),
                         "refresh_runs": summarize_runs(existing_runs),
                     },
@@ -473,17 +397,22 @@ def main() -> int:
             )
             return 0
 
+        if already_complete and feature_rows <= 0:
+            print(
+                "Enhancement-family history is marked complete, but the wide "
+                "V3 feature source is empty. Forcing a new refresh RPC for "
+                f"{args.game_date.isoformat()}."
+            )
+
         baseline_run_id = baseline_refresh_run_id(baseline_rows)
         print(
             f"Submitting V3 feature refresh for {args.game_date.isoformat()}. "
             f"Baseline refresh_run_id={baseline_run_id}."
         )
 
-        ambiguous_error: Exception | None = None
+        ambiguous_error = None
 
         for attempt in range(MAX_LOCK_TIMEOUT_RETRIES + 1):
-            response: requests.Response | None = None
-
             try:
                 response = submit_refresh_once(
                     session,
@@ -495,24 +424,43 @@ def main() -> int:
                 ambiguous_error = exc
                 print(
                     "Refresh RPC ended with an ambiguous network error; "
-                    "the database may still be running it. "
-                    f"Error: {exc}",
+                    f"the database may still be running it. Error: {exc}",
                     file=sys.stderr,
                 )
                 break
 
             if response.ok:
                 try:
-                    payload: Any = response.json()
+                    payload = response.json()
                 except ValueError:
                     payload = response.text
+
+                post_status = get_pipeline_status(
+                    session,
+                    supabase_url,
+                    headers,
+                    args.game_date,
+                )
+                post_feature_rows = int(post_status.get("feature_row_count") or 0)
+
+                if (
+                    int(post_status.get("eligible_game_count") or 0) > 0
+                    and post_feature_rows <= 0
+                ):
+                    raise RuntimeError(
+                        "V3 enhancement refresh returned success, but the wide "
+                        f"feature source is still empty for {args.game_date.isoformat()}. "
+                        f"Pipeline status: {json.dumps(post_status, default=str)}"
+                    )
 
                 print(
                     json.dumps(
                         {
-                            "status": "submitted",
+                            "status": "complete",
+                            "completion_source": "refresh_rpc",
                             "game_date": args.game_date.isoformat(),
                             "response": payload,
+                            "pipeline_status": post_status,
                         },
                         default=str,
                         indent=2,
@@ -524,45 +472,16 @@ def main() -> int:
                 if attempt < MAX_LOCK_TIMEOUT_RETRIES:
                     print(
                         "V3 feature refresh hit PostgreSQL lock timeout. "
-                        f"Waiting {LOCK_RETRY_DELAY_SECONDS}s, re-checking "
-                        "completion, then retrying once...",
+                        f"Waiting {LOCK_RETRY_DELAY_SECONDS}s before retrying once...",
                         file=sys.stderr,
                     )
                     time.sleep(LOCK_RETRY_DELAY_SECONDS)
-
-                    complete, runs = refresh_already_complete(
-                        session,
-                        supabase_url,
-                        headers,
-                        args.game_date,
-                    )
-                    if complete:
-                        print(
-                            json.dumps(
-                                {
-                                    "status": "complete",
-                                    "completion_source": "lock_timeout_recheck",
-                                    "game_date": args.game_date.isoformat(),
-                                    "refresh_runs": summarize_runs(runs),
-                                },
-                                default=str,
-                                indent=2,
-                            )
-                        )
-                        return 0
                     continue
-
                 response.raise_for_status()
 
             if response.status_code >= 500:
                 ambiguous_error = requests.HTTPError(
                     f"HTTP {response.status_code}: {response.text[:1000]}"
-                )
-                print(
-                    "Refresh RPC returned an ambiguous server response; "
-                    "the database may still be running it. "
-                    f"Status={response.status_code}",
-                    file=sys.stderr,
                 )
                 break
 
@@ -576,6 +495,23 @@ def main() -> int:
                 args.game_date,
                 baseline_run_id,
             )
+            post_status = get_pipeline_status(
+                session,
+                supabase_url,
+                headers,
+                args.game_date,
+            )
+
+            if (
+                int(post_status.get("eligible_game_count") or 0) > 0
+                and int(post_status.get("feature_row_count") or 0) <= 0
+            ):
+                raise RuntimeError(
+                    "Refresh families completed after an ambiguous response, "
+                    "but the wide V3 feature source is still empty. "
+                    f"Pipeline status: {json.dumps(post_status, default=str)}"
+                )
+
             print(
                 json.dumps(
                     {
@@ -584,6 +520,7 @@ def main() -> int:
                         "game_date": args.game_date.isoformat(),
                         "ambiguous_error": str(ambiguous_error),
                         "refresh_runs": summarize_runs(runs),
+                        "pipeline_status": post_status,
                     },
                     default=str,
                     indent=2,
