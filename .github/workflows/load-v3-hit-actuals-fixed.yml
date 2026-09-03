@@ -1,0 +1,404 @@
+name: Load V3 Hit Actuals
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_date:
+        description: "Optional MLB prediction date to load actuals for, YYYY-MM-DD. Defaults to yesterday's Eastern date."
+        required: false
+        type: string
+      min_log_coverage_pct:
+        description: "Minimum batting-log coverage percentage required before loading actuals."
+        required: false
+        default: "85"
+        type: string
+
+  # Primary dependency-driven run: close yesterday's V3 actuals after Phase 1 refresh succeeds.
+  workflow_run:
+    workflows: ["Load All MLB Phase 1 Data"]
+    types: [completed]
+
+  schedule:
+    # Backup run at 12:15 UTC / 8:15 AM EDT.
+    # If the dependency-driven run already succeeded today, the gate below skips this backup.
+    - cron: "15 12 * * *"
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: load-v3-hit-actuals
+  cancel-in-progress: false
+
+jobs:
+  once-daily-gate:
+    runs-on: ubuntu-latest
+    outputs:
+      should_run: ${{ steps.gate.outputs.should_run }}
+
+    steps:
+      - name: Enforce one automatic run per Eastern day
+        id: gate
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const automaticEvents = new Set(["schedule", "workflow_run"]);
+
+            // Manual runs remain available for intentional same-day reruns/backfills.
+            if (!automaticEvents.has(context.eventName)) {
+              core.info(`Event ${context.eventName} is not automatic; allowing run.`);
+              core.setOutput("should_run", "true");
+              return;
+            }
+
+            const easternDate = (value) => {
+              const parts = new Intl.DateTimeFormat("en-US", {
+                timeZone: "America/New_York",
+                year: "numeric",
+                month: "2-digit",
+                day: "2-digit",
+              }).formatToParts(new Date(value));
+
+              const values = Object.fromEntries(
+                parts
+                  .filter((part) => part.type !== "literal")
+                  .map((part) => [part.type, part.value])
+              );
+
+              return `${values.year}-${values.month}-${values.day}`;
+            };
+
+            const todayEastern = easternDate(new Date());
+            const workflowPrefix = `${context.repo.owner}/${context.repo.repo}/`;
+            const workflowId = process.env.GITHUB_WORKFLOW_REF
+              .split("@")[0]
+              .replace(workflowPrefix, "");
+
+            const runs = await github.paginate(
+              github.rest.actions.listWorkflowRuns,
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: workflowId,
+                per_page: 100,
+              }
+            );
+
+            const priorSuccessfulAutomaticRun = runs.find((run) => {
+              if (run.id === context.runId) return false;
+              if (!automaticEvents.has(run.event)) return false;
+              if (run.conclusion !== "success") return false;
+              return easternDate(run.created_at) === todayEastern;
+            });
+
+            if (priorSuccessfulAutomaticRun) {
+              core.info(
+                `Skipping duplicate automatic actuals run. Prior successful run ` +
+                `${priorSuccessfulAutomaticRun.id} was created at ` +
+                `${priorSuccessfulAutomaticRun.created_at}.`
+              );
+              core.setOutput("should_run", "false");
+              return;
+            }
+
+            core.info("No prior successful automatic actuals run found today.");
+            core.setOutput("should_run", "true");
+
+  load-v3-hit-actuals:
+    needs: once-daily-gate
+    runs-on: ubuntu-latest
+
+    # If triggered by workflow_run, only run when Phase 1 succeeded.
+    if: ${{ needs.once-daily-gate.outputs.should_run == 'true' && (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success') }}
+
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      TARGET_DATE: ${{ github.event.inputs.target_date }}
+      MIN_LOG_COVERAGE_PCT: ${{ github.event.inputs.min_log_coverage_pct || '85' }}
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install supabase
+
+      - name: Preflight actuals data coverage
+        run: |
+          python - <<'PY'
+          import os
+          from datetime import datetime, timedelta
+          from zoneinfo import ZoneInfo
+          from supabase import create_client
+
+          supabase = create_client(
+              os.environ["SUPABASE_URL"],
+              os.environ["SUPABASE_SERVICE_ROLE_KEY"],
+          )
+
+          input_date = (os.getenv("TARGET_DATE") or "").strip()
+          target_date = input_date or (
+              datetime.now(ZoneInfo("America/New_York")).date() - timedelta(days=1)
+          ).isoformat()
+
+          min_coverage = float(os.getenv("MIN_LOG_COVERAGE_PCT") or "85")
+
+          print(f"Preflight for V3 actuals target date: {target_date}")
+          print(f"Minimum required batting-log coverage: {min_coverage:.1f}%")
+
+          predictions = (
+              supabase
+              .table("v_mlb_ml_predictions_v3_active")
+              .select("prediction_id,player_id,game_pk", count="exact")
+              .eq("target_name", "hit_1plus")
+              .eq("prediction_run_date", target_date)
+              .limit(1)
+              .execute()
+          )
+
+          prediction_count = predictions.count or 0
+          print(f"Active V3 prediction rows for {target_date}: {prediction_count}")
+
+          if prediction_count <= 0:
+              pipeline_result = supabase.rpc(
+                  "get_mlb_daily_prediction_pipeline_status",
+                  {"p_game_date": target_date},
+              ).execute()
+
+              pipeline_status = pipeline_result.data or {}
+              if isinstance(pipeline_status, list):
+                  pipeline_status = pipeline_status[0] if pipeline_status else {}
+
+              eligible_games = int(pipeline_status.get("eligible_game_count") or 0)
+              pipeline_state = pipeline_status.get("pipeline_status") or "unknown"
+
+              print("No V3 predictions exist for the actuals target date.")
+              print(f"Daily pipeline status: {pipeline_status}")
+
+              # Explicit historical/manual target dates remain strict so a requested
+              # backfill cannot silently become a no-op.
+              if input_date:
+                  raise RuntimeError(
+                      f"No active V3 predictions found for explicit target {target_date}. "
+                      "A historical actuals load cannot run without a legitimate "
+                      "pre-game V3 prediction run."
+                  )
+
+              # Automatic/default daily recovery must NOT fail the workflow here.
+              # A missed V3 prediction day has no actuals to attach, and failing this
+              # job would deadlock today's V3 model gate and create another missed day.
+              with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as env_file:
+                  env_file.write("SKIP_V3_ACTUALS=true\n")
+                  env_file.write(f"MISSING_V3_PREDICTION_DATE={target_date}\n")
+
+              if eligible_games > 0:
+                  print(
+                      "::warning title=Missing V3 prediction run::"
+                      f"{target_date} had {eligible_games} eligible MLB games but "
+                      "zero active V3 predictions. Actuals are being skipped so this "
+                      "missing historical run does not block today's V3 model."
+                  )
+                  print(
+                      f"Classification: MISSING_V3_PREDICTION_RUN "
+                      f"(pipeline_status={pipeline_state})"
+                  )
+              else:
+                  print(
+                      f"No prediction-eligible MLB games for {target_date}; "
+                      "there are no V3 actuals to load."
+                  )
+
+              raise SystemExit(0)
+
+          log_games = (
+              supabase
+              .table("mlb_player_batting_game_logs")
+              .select("game_pk", count="exact")
+              .eq("game_date", target_date)
+              .limit(1)
+              .execute()
+          )
+
+          batting_log_rows = log_games.count or 0
+          print(f"Batting game-log rows for {target_date}: {batting_log_rows}")
+
+          if batting_log_rows <= 0:
+              raise RuntimeError(
+                  f"No batting game logs found for {target_date}. "
+                  "Run the MLB game-log refresh before loading V3 actuals."
+              )
+
+          prediction_pairs_result = (
+              supabase
+              .table("v_mlb_ml_predictions_v3_active")
+              .select("player_id,game_pk")
+              .eq("target_name", "hit_1plus")
+              .eq("prediction_run_date", target_date)
+              .range(0, 9999)
+              .execute()
+          )
+
+          batting_log_pairs_result = (
+              supabase
+              .table("mlb_player_batting_game_logs")
+              .select("player_id,game_pk")
+              .eq("game_date", target_date)
+              .range(0, 9999)
+              .execute()
+          )
+
+          prediction_pairs = {
+              (str(row.get("player_id")), str(row.get("game_pk")))
+              for row in (prediction_pairs_result.data or [])
+              if row.get("player_id") is not None and row.get("game_pk") is not None
+          }
+          batting_log_pairs = {
+              (str(row.get("player_id")), str(row.get("game_pk")))
+              for row in (batting_log_pairs_result.data or [])
+              if row.get("player_id") is not None and row.get("game_pk") is not None
+          }
+
+          matched_batting_logs = len(prediction_pairs & batting_log_pairs)
+          coverage_pct = (
+              matched_batting_logs / len(prediction_pairs) * 100
+              if prediction_pairs else 0
+          )
+
+          print("Preflight active-run batting-log coverage:")
+          print({
+              "prediction_rows": len(prediction_pairs),
+              "matched_batting_logs": matched_batting_logs,
+              "coverage_pct": round(coverage_pct, 1),
+          })
+          PY
+
+      - name: Load V3 hit actuals and evaluation statuses
+        if: ${{ env.SKIP_V3_ACTUALS != 'true' }}
+        run: |
+          python - <<'PY'
+          import os
+          from datetime import datetime, timedelta
+          from zoneinfo import ZoneInfo
+          from supabase import create_client
+
+          supabase = create_client(
+              os.environ["SUPABASE_URL"],
+              os.environ["SUPABASE_SERVICE_ROLE_KEY"]
+          )
+
+          input_date = (os.getenv("TARGET_DATE") or "").strip()
+          target_date = input_date or (
+              datetime.now(ZoneInfo("America/New_York")).date() - timedelta(days=1)
+          ).isoformat()
+
+          min_coverage = float(os.getenv("MIN_LOG_COVERAGE_PCT") or "85")
+
+          print(f"Loading V3 hit actuals for prediction date: {target_date}")
+
+          result = supabase.rpc(
+              "load_mlb_v3_actuals",
+              {
+                  "target_prediction_date": target_date,
+                  "target_name_filter": "hit_1plus"
+              }
+          ).execute()
+
+          print("load_mlb_v3_actuals result:")
+          print(result.data)
+
+          status = (
+              supabase
+              .table("v_mlb_ml_v3_actuals_load_status")
+              .select(
+                  "target_name,prediction_run_date,prediction_rows,"
+                  "actual_loaded_rows,actual_result_rows,played_rows,"
+                  "did_not_play_rows,pending_data_rows,game_not_loaded_rows,"
+                  "availability_rate_pct,actual_binary_rate,last_evaluation_update_at"
+              )
+              .eq("target_name", "hit_1plus")
+              .eq("prediction_run_date", target_date)
+              .limit(1)
+              .execute()
+          )
+
+          print("V3 actuals status:")
+          print(status.data)
+
+          if not status.data:
+              raise RuntimeError(
+                  f"No V3 prediction/status rows found for {target_date}. "
+                  "Confirm the V3 model ran for that date before loading actuals."
+              )
+
+          row = status.data[0]
+          prediction_rows = row.get("prediction_rows") or 0
+          played_rows = row.get("played_rows") or 0
+          dnp_rows = row.get("did_not_play_rows") or 0
+          pending_rows = (
+              (row.get("pending_data_rows") or 0)
+              + (row.get("game_not_loaded_rows") or 0)
+          )
+
+          resolved_rows = played_rows + dnp_rows
+          resolved_pct = (
+              resolved_rows / prediction_rows * 100 if prediction_rows else 0
+          )
+
+          print(
+              f"Resolved rows: {resolved_rows}/{prediction_rows} "
+              f"({resolved_pct:.1f}%)"
+          )
+          print(f"Played rows: {played_rows}")
+          print(f"DNP rows: {dnp_rows}")
+          print(f"Pending/game-not-loaded rows: {pending_rows}")
+
+          if pending_rows > 0 and resolved_pct < min_coverage:
+              raise RuntimeError(
+                  f"Actuals coverage below threshold. Resolved {resolved_pct:.1f}% "
+                  f"but required {min_coverage:.1f}%. "
+                  "Run MLB batting game-log refresh again before finalizing actuals."
+              )
+
+          print("V3 actuals load completed and coverage check passed.")
+          PY
+
+      - name: Refresh model performance page cache
+        if: ${{ env.SKIP_V3_ACTUALS != 'true' }}
+        run: |
+          python - <<'PY'
+          import os
+          from supabase import create_client
+
+          supabase = create_client(
+              os.environ["SUPABASE_URL"],
+              os.environ["SUPABASE_SERVICE_ROLE_KEY"]
+          )
+
+          result = supabase.rpc(
+              "refresh_mlb_model_performance_page_cache"
+          ).execute()
+
+          print("Model performance page cache refresh result:")
+          print(result.data)
+
+          if not result.data:
+              raise RuntimeError(
+                  "refresh_mlb_model_performance_page_cache returned no rows. "
+                  "Confirm the Supabase function exists and the service-role key can execute it."
+              )
+          PY
+
+      - name: Report skipped missing prediction day
+        if: ${{ env.SKIP_V3_ACTUALS == 'true' }}
+        run: |
+          echo "V3 actuals intentionally skipped for ${MISSING_V3_PREDICTION_DATE}."
+          echo "The prior prediction day is classified as missing/no-run; today's V3 pipeline remains unblocked."
