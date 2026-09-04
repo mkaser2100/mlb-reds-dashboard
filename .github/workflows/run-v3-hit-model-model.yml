@@ -86,18 +86,45 @@ jobs:
               }
             );
 
-            const priorSuccessfulAutomaticRun = currentWorkflowRuns.find((run) => {
+            const priorAutomaticRunsToday = currentWorkflowRuns.filter((run) => {
               if (run.id === context.runId) return false;
               if (!automaticEvents.has(run.event)) return false;
-              if (run.conclusion !== "success") return false;
               return easternDate(run.created_at) === todayEastern;
             });
 
-            if (priorSuccessfulAutomaticRun) {
+            let priorSuccessfulModelRun = null;
+
+            for (const run of priorAutomaticRunsToday) {
+              const jobs = await github.paginate(
+                github.rest.actions.listJobsForWorkflowRun,
+                {
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  run_id: run.id,
+                  per_page: 100,
+                }
+              );
+
+              const modelJob = jobs.find(
+                (job) => job.name === "run-v3-hit-model"
+              );
+
+              if (modelJob?.conclusion === "success") {
+                priorSuccessfulModelRun = run;
+                break;
+              }
+
               core.info(
-                `Skipping duplicate automatic V3 run. Prior successful run ` +
-                `${priorSuccessfulAutomaticRun.id} was created at ` +
-                `${priorSuccessfulAutomaticRun.created_at}.`
+                `Prior V3 workflow ${run.id} does not count as a completed model run: ` +
+                `run-v3-hit-model conclusion=${modelJob?.conclusion ?? "missing"}.`
+              );
+            }
+
+            if (priorSuccessfulModelRun) {
+              core.info(
+                `Skipping duplicate automatic V3 run. The actual run-v3-hit-model job ` +
+                `already succeeded in workflow ${priorSuccessfulModelRun.id}, created at ` +
+                `${priorSuccessfulModelRun.created_at}.`
               );
               core.setOutput("should_run", "false");
               return;
@@ -160,8 +187,8 @@ jobs:
             }
 
             core.info(
-              "Both V3 prerequisites succeeded today and no prior automatic " +
-              "V3 run succeeded today; allowing model run."
+              "Both V3 prerequisites succeeded today and no prior successful " +
+              "run-v3-hit-model job exists today; allowing model run."
             );
             core.setOutput("should_run", "true");
 
