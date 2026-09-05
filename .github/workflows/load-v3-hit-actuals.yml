@@ -1,6 +1,15 @@
 name: Load V3 Hit Actuals
 
 on:
+  workflow_call:
+    inputs:
+      target_date:
+        required: false
+        type: string
+      min_log_coverage_pct:
+        required: false
+        type: string
+        default: "85"
   workflow_dispatch:
     inputs:
       target_date:
@@ -13,18 +22,7 @@ on:
         default: "85"
         type: string
 
-  # Primary dependency-driven run: close yesterday's V3 actuals after Phase 1 refresh succeeds.
-  workflow_run:
-    workflows: ["Load All MLB Phase 1 Data"]
-    types: [completed]
-
-  schedule:
-    # Backup run at 12:15 UTC / 8:15 AM EDT.
-    # If the dependency-driven run already succeeded today, the gate below skips this backup.
-    - cron: "15 12 * * *"
-
 permissions:
-  actions: read
   contents: read
 
 concurrency:
@@ -32,91 +30,14 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  once-daily-gate:
-    runs-on: ubuntu-latest
-    outputs:
-      should_run: ${{ steps.gate.outputs.should_run }}
-
-    steps:
-      - name: Enforce one automatic run per Eastern day
-        id: gate
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const automaticEvents = new Set(["schedule", "workflow_run"]);
-
-            // Manual runs remain available for intentional same-day reruns/backfills.
-            if (!automaticEvents.has(context.eventName)) {
-              core.info(`Event ${context.eventName} is not automatic; allowing run.`);
-              core.setOutput("should_run", "true");
-              return;
-            }
-
-            const easternDate = (value) => {
-              const parts = new Intl.DateTimeFormat("en-US", {
-                timeZone: "America/New_York",
-                year: "numeric",
-                month: "2-digit",
-                day: "2-digit",
-              }).formatToParts(new Date(value));
-
-              const values = Object.fromEntries(
-                parts
-                  .filter((part) => part.type !== "literal")
-                  .map((part) => [part.type, part.value])
-              );
-
-              return `${values.year}-${values.month}-${values.day}`;
-            };
-
-            const todayEastern = easternDate(new Date());
-            const workflowPrefix = `${context.repo.owner}/${context.repo.repo}/`;
-            const workflowId = process.env.GITHUB_WORKFLOW_REF
-              .split("@")[0]
-              .replace(workflowPrefix, "");
-
-            const runs = await github.paginate(
-              github.rest.actions.listWorkflowRuns,
-              {
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                workflow_id: workflowId,
-                per_page: 100,
-              }
-            );
-
-            const priorSuccessfulAutomaticRun = runs.find((run) => {
-              if (run.id === context.runId) return false;
-              if (!automaticEvents.has(run.event)) return false;
-              if (run.conclusion !== "success") return false;
-              return easternDate(run.created_at) === todayEastern;
-            });
-
-            if (priorSuccessfulAutomaticRun) {
-              core.info(
-                `Skipping duplicate automatic actuals run. Prior successful run ` +
-                `${priorSuccessfulAutomaticRun.id} was created at ` +
-                `${priorSuccessfulAutomaticRun.created_at}.`
-              );
-              core.setOutput("should_run", "false");
-              return;
-            }
-
-            core.info("No prior successful automatic actuals run found today.");
-            core.setOutput("should_run", "true");
-
   load-v3-hit-actuals:
-    needs: once-daily-gate
     runs-on: ubuntu-latest
-
-    # If triggered by workflow_run, only run when Phase 1 succeeded.
-    if: ${{ needs.once-daily-gate.outputs.should_run == 'true' && (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success') }}
 
     env:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-      TARGET_DATE: ${{ github.event.inputs.target_date }}
-      MIN_LOG_COVERAGE_PCT: ${{ github.event.inputs.min_log_coverage_pct || '85' }}
+      TARGET_DATE: ${{ inputs.target_date }}
+      MIN_LOG_COVERAGE_PCT: ${{ inputs.min_log_coverage_pct || '85' }}
 
     steps:
       - name: Checkout repo
@@ -184,8 +105,6 @@ jobs:
               print("No V3 predictions exist for the actuals target date.")
               print(f"Daily pipeline status: {pipeline_status}")
 
-              # Explicit historical/manual target dates remain strict so a requested
-              # backfill cannot silently become a no-op.
               if input_date:
                   raise RuntimeError(
                       f"No active V3 predictions found for explicit target {target_date}. "
@@ -193,9 +112,6 @@ jobs:
                       "pre-game V3 prediction run."
                   )
 
-              # Automatic/default daily recovery must NOT fail the workflow here.
-              # A missed V3 prediction day has no actuals to attach, and failing this
-              # job would deadlock today's V3 model gate and create another missed day.
               with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as env_file:
                   env_file.write("SKIP_V3_ACTUALS=true\n")
                   env_file.write(f"MISSING_V3_PREDICTION_DATE={target_date}\n")

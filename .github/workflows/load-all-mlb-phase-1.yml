@@ -1,6 +1,20 @@
 name: Load All MLB Phase 1 Data
 
 on:
+  workflow_call:
+    inputs:
+      date:
+        required: false
+        type: string
+        default: ""
+      days_back:
+        required: false
+        type: string
+        default: "7"
+      skip_splits:
+        required: false
+        type: boolean
+        default: false
   workflow_dispatch:
     inputs:
       date:
@@ -14,11 +28,8 @@ on:
       skip_splits:
         description: "Skip hitter split loading for faster test run"
         required: false
-        default: "false"
-  schedule:
-    # GitHub cron runs in UTC.
-    # During daylight savings time: 07:15 UTC = 3:15 AM ET.
-    - cron: "15 7 * * *"
+        default: false
+        type: boolean
 
 jobs:
   load-all-mlb-phase-1:
@@ -35,7 +46,6 @@ jobs:
       - name: Show schedule context
         run: |
           echo "event_name=${{ github.event_name }}"
-          echo "schedule=${{ github.event.schedule }}"
           echo "utc_now=$(date -u)"
           echo "et_now=$(TZ=America/New_York date)"
           echo "sha=${{ github.sha }}"
@@ -55,9 +65,9 @@ jobs:
 
       - name: Load all MLB phase 1 data
         run: |
-          DATE_INPUT="${{ github.event.inputs.date }}"
-          DAYS_BACK="${{ github.event.inputs.days_back || '7' }}"
-          SKIP_SPLITS="${{ github.event.inputs.skip_splits || 'false' }}"
+          DATE_INPUT="${{ inputs.date }}"
+          DAYS_BACK="${{ inputs.days_back || '7' }}"
+          SKIP_SPLITS="${{ inputs.skip_splits }}"
 
           CMD="python scripts/load_all_mlb_phase1.py --days-back ${DAYS_BACK}"
           if [ -n "$DATE_INPUT" ]; then
@@ -92,7 +102,7 @@ jobs:
               os.environ["SUPABASE_SERVICE_ROLE_KEY"],
           )
 
-          target_date = "${{ github.event.inputs.date }}".strip()
+          target_date = "${{ inputs.date }}".strip()
           if not target_date:
               target_date = datetime.now(
                   ZoneInfo("America/New_York")
@@ -171,7 +181,7 @@ jobs:
               os.environ["SUPABASE_SERVICE_ROLE_KEY"],
           )
 
-          target_date = "${{ github.event.inputs.date }}".strip()
+          target_date = "${{ inputs.date }}".strip()
           if not target_date:
               target_date = datetime.now(ZoneInfo("America/New_York")).date().isoformat()
 

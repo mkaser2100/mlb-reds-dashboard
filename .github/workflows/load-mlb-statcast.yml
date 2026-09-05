@@ -1,6 +1,18 @@
 name: Load MLB Statcast
 
 on:
+  workflow_call:
+    inputs:
+      start_date:
+        required: false
+        type: string
+      end_date:
+        required: false
+        type: string
+      dry_run:
+        required: false
+        type: boolean
+        default: false
   workflow_dispatch:
     inputs:
       start_date:
@@ -16,10 +28,6 @@ on:
         required: true
         default: false
         type: boolean
-
-  schedule:
-    # 10:45 UTC = 6:45 AM EDT / 5:45 AM EST.
-    - cron: "45 10 * * *"
 
 concurrency:
   group: load-mlb-statcast-${{ github.event_name }}-${{ inputs.start_date || 'daily' }}
@@ -72,10 +80,8 @@ jobs:
 
           if [[ "${INPUT_DRY_RUN:-false}" == "true" ]]; then
             ARGS+=(--dry-run)
-          fi
-
-          # Scheduled runs may follow an MLB-wide off day.
-          if [[ "${{ github.event_name }}" == "schedule" ]]; then
+          else
+            # Production/reusable runs can follow an MLB-wide off day.
             ARGS+=(--continue-on-empty)
           fi
 
@@ -92,8 +98,8 @@ jobs:
           {
             echo "## MLB Statcast Loader"
             echo
-            echo "- Trigger: \`${{ github.event_name }}\`"
-            echo "- Start date: \`${{ inputs.start_date || 'yesterday ET' }}\`"
-            echo "- End date: \`${{ inputs.end_date || 'yesterday ET' }}\`"
-            echo "- Feature refresh: \`handled by Refresh MLB V3 Features workflow\`"
+            echo "- Trigger: `${{ github.event_name }}`"
+            echo "- Start date: `${{ inputs.start_date || 'yesterday ET' }}`"
+            echo "- End date: `${{ inputs.end_date || 'yesterday ET' }}`"
+            echo "- Feature refresh: `handled by master V3 production pipeline`"
           } >> "$GITHUB_STEP_SUMMARY"
