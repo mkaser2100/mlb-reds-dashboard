@@ -1,6 +1,12 @@
 name: Run V3 Hit Model
 
 on:
+  workflow_call:
+    inputs:
+      target_date:
+        required: false
+        type: string
+
   workflow_dispatch:
     inputs:
       target_date:
@@ -8,21 +14,7 @@ on:
         required: false
         type: string
 
-  # Either prerequisite completing will wake this workflow.
-  # The readiness gate below requires BOTH prerequisites to have succeeded
-  # on the current Eastern date before the model can run.
-  workflow_run:
-    workflows:
-      - "Load V3 Hit Actuals"
-      - "Refresh MLB V3 Features"
-    types: [completed]
-
-  schedule:
-    # Backup readiness check at 12:45 UTC / 8:45 AM EDT.
-    - cron: "45 12 * * *"
-
 permissions:
-  actions: read
   contents: read
 
 concurrency:
@@ -31,178 +23,14 @@ concurrency:
 
 jobs:
 
-  once-daily-gate:
-    runs-on: ubuntu-latest
-    outputs:
-      should_run: ${{ steps.gate.outputs.should_run }}
-
-    steps:
-      - name: Verify prerequisites and prevent duplicate automatic runs
-        id: gate
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const automaticEvents = new Set(["schedule", "workflow_run"]);
-
-            // Manual runs remain available for intentional reruns/backfills.
-            if (!automaticEvents.has(context.eventName)) {
-              core.info(`Event ${context.eventName} is manual; allowing run.`);
-              core.setOutput("should_run", "true");
-              return;
-            }
-
-            const easternDate = (value) => {
-              const parts = new Intl.DateTimeFormat("en-US", {
-                timeZone: "America/New_York",
-                year: "numeric",
-                month: "2-digit",
-                day: "2-digit",
-              }).formatToParts(new Date(value));
-
-              const values = Object.fromEntries(
-                parts
-                  .filter((part) => part.type !== "literal")
-                  .map((part) => [part.type, part.value])
-              );
-
-              return `${values.year}-${values.month}-${values.day}`;
-            };
-
-            const todayEastern = easternDate(new Date());
-            core.info(`Current Eastern date: ${todayEastern}`);
-
-            const workflowPrefix = `${context.repo.owner}/${context.repo.repo}/`;
-            const workflowId = process.env.GITHUB_WORKFLOW_REF
-              .split("@")[0]
-              .replace(workflowPrefix, "");
-
-            const currentWorkflowRuns = await github.paginate(
-              github.rest.actions.listWorkflowRuns,
-              {
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                workflow_id: workflowId,
-                per_page: 100,
-              }
-            );
-
-            const priorAutomaticRunsToday = currentWorkflowRuns.filter((run) => {
-              if (run.id === context.runId) return false;
-              if (!automaticEvents.has(run.event)) return false;
-              return easternDate(run.created_at) === todayEastern;
-            });
-
-            let priorSuccessfulModelRun = null;
-
-            for (const run of priorAutomaticRunsToday) {
-              const jobs = await github.paginate(
-                github.rest.actions.listJobsForWorkflowRun,
-                {
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  run_id: run.id,
-                  per_page: 100,
-                }
-              );
-
-              const modelJob = jobs.find(
-                (job) => job.name === "run-v3-hit-model"
-              );
-
-              if (modelJob?.conclusion === "success") {
-                priorSuccessfulModelRun = run;
-                break;
-              }
-
-              core.info(
-                `Prior V3 workflow ${run.id} does not count as a completed model run: ` +
-                `run-v3-hit-model conclusion=${modelJob?.conclusion ?? "missing"}.`
-              );
-            }
-
-            if (priorSuccessfulModelRun) {
-              core.info(
-                `Skipping duplicate automatic V3 run. The actual run-v3-hit-model job ` +
-                `already succeeded in workflow ${priorSuccessfulModelRun.id}, created at ` +
-                `${priorSuccessfulModelRun.created_at}.`
-              );
-              core.setOutput("should_run", "false");
-              return;
-            }
-
-            const requiredWorkflows = [
-              "Load V3 Hit Actuals",
-              "Refresh MLB V3 Features",
-            ];
-
-            const repoWorkflows = await github.paginate(
-              github.rest.actions.listRepoWorkflows,
-              {
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                per_page: 100,
-              }
-            );
-
-            for (const requiredName of requiredWorkflows) {
-              const requiredWorkflow = repoWorkflows.find(
-                (workflow) => workflow.name === requiredName
-              );
-
-              if (!requiredWorkflow) {
-                core.warning(`Required workflow not found: ${requiredName}`);
-                core.setOutput("should_run", "false");
-                return;
-              }
-
-              const requiredRuns = await github.paginate(
-                github.rest.actions.listWorkflowRuns,
-                {
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  workflow_id: requiredWorkflow.id,
-                  per_page: 100,
-                }
-              );
-
-              const successToday = requiredRuns.find(
-                (run) =>
-                  run.conclusion === "success" &&
-                  easternDate(run.created_at) === todayEastern
-              );
-
-              if (!successToday) {
-                core.info(
-                  `${requiredName} has not successfully completed on ` +
-                  `${todayEastern}; V3 will not run yet.`
-                );
-                core.setOutput("should_run", "false");
-                return;
-              }
-
-              core.info(
-                `${requiredName} prerequisite satisfied by run ${successToday.id} ` +
-                `created at ${successToday.created_at}.`
-              );
-            }
-
-            core.info(
-              "Both V3 prerequisites succeeded today and no prior successful " +
-              "run-v3-hit-model job exists today; allowing model run."
-            );
-            core.setOutput("should_run", "true");
-
   run-v3-hit-model:
-    needs: once-daily-gate
     runs-on: ubuntu-latest
 
-    # Automatic runs proceed only after the gate confirms both prerequisites.
-    if: ${{ needs.once-daily-gate.outputs.should_run == 'true' }}
 
     env:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-      TARGET_DATE: ${{ github.event.inputs.target_date }}
+      TARGET_DATE: ${{ inputs.target_date }}
 
     steps:
       - name: Checkout repo
