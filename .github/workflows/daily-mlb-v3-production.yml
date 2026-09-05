@@ -1,0 +1,67 @@
+name: Daily MLB V3 Production Pipeline
+
+on:
+  workflow_dispatch:
+    inputs:
+      prediction_date:
+        description: "Optional prediction date YYYY-MM-DD. Blank defaults to today ET."
+        required: false
+        type: string
+      actuals_target_date:
+        description: "Optional actuals date YYYY-MM-DD. Blank defaults to yesterday ET."
+        required: false
+        type: string
+  schedule:
+    - cron: "45 10 * * *"
+
+concurrency:
+  group: daily-mlb-v3-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  phase1:
+    uses: ./.github/workflows/load-all-mlb-phase-1.yml
+    with:
+      date: ${{ inputs.prediction_date || '' }}
+      days_back: "7"
+      skip_splits: false
+    secrets: inherit
+
+  statcast:
+    needs: phase1
+    uses: ./.github/workflows/load-mlb-statcast.yml
+    with:
+      dry_run: false
+    secrets: inherit
+
+  actuals:
+    needs: phase1
+    uses: ./.github/workflows/load-v3-hit-actuals.yml
+    with:
+      target_date: ${{ inputs.actuals_target_date || '' }}
+      min_log_coverage_pct: "85"
+    secrets: inherit
+
+  features:
+    needs: statcast
+    uses: ./.github/workflows/refresh-mlb-v3-features.yml
+    with:
+      game_date: ${{ inputs.prediction_date || '' }}
+    secrets: inherit
+
+  v3_model:
+    needs: [actuals, features]
+    uses: ./.github/workflows/run-v3-hit-model-model.yml
+    with:
+      target_date: ${{ inputs.prediction_date || '' }}
+    secrets: inherit
+
+  performance:
+    needs: v3_model
+    uses: ./.github/workflows/refresh-mlb-hit-board-performance.yml
+    with:
+      days_back: "3"
+    secrets: inherit
