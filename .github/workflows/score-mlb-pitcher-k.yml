@@ -63,3 +63,22 @@ jobs:
             ARGS+=(--allow-after-start)
           fi
           python scripts/score_pitcher_k.py "${ARGS[@]}"
+
+      - name: Validate shadow pipeline health
+        shell: bash
+        run: |
+          set -euo pipefail
+          ARGS=(--min-coverage-pct 95)
+          if [[ -n "${{ inputs.game_date }}" ]]; then
+            ARGS+=(--date "${{ inputs.game_date }}")
+          fi
+          if [[ "${{ inputs.allow_after_start }}" == "true" ]]; then
+            ARGS+=(--allow-after-start)
+          fi
+          python scripts/validate_pitcher_k_shadow.py "${ARGS[@]}"
+
+      - name: Job summary
+        if: always()
+        run: |
+          echo "## Pitcher K Shadow Scoring" >> "$GITHUB_STEP_SUMMARY"
+          echo "Scores the current pitcher-K candidate and validates coverage, pregame timing, and quality-state counts." >> "$GITHUB_STEP_SUMMARY"
