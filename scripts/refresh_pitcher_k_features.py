@@ -21,6 +21,8 @@ SUPABASE_KEY = (
 FEATURE_TABLE = "mlb_ml_pitcher_k_features_daily"
 DAILY_RPC = "refresh_mlb_ml_pitcher_k_features"
 BACKFILL_RPC = "backfill_mlb_ml_pitcher_k_features"
+SYNC_OFFICIAL_STARTERS_RPC = "sync_mlb_official_starters_to_context"
+APPLY_CONFIRMED_LINEUPS_RPC = "apply_mlb_pitcher_k_confirmed_lineups"
 
 
 class PitcherKFeatureError(RuntimeError):
@@ -92,7 +94,6 @@ def rest_get(table_or_view: str, params: Mapping[str, str]) -> Any:
 
 def ny_today() -> str:
     from zoneinfo import ZoneInfo
-
     return dt.datetime.now(ZoneInfo("America/New_York")).date().isoformat()
 
 
@@ -108,8 +109,14 @@ def validate_iso_date(value: str) -> str:
 def run_daily(game_date: str) -> Dict[str, Any]:
     log(f"Refreshing pitcher-K features for {game_date} ...")
 
+    starter_sync = rpc(SYNC_OFFICIAL_STARTERS_RPC, {"p_game_date": game_date})
+    log(f"Official starter sync: {json.dumps(starter_sync, default=str)}")
+
     result = rpc(DAILY_RPC, {"p_game_date": game_date})
-    log(f"RPC result: {json.dumps(result, default=str)}")
+    log(f"Base feature RPC result: {json.dumps(result, default=str)}")
+
+    lineup_result = rpc(APPLY_CONFIRMED_LINEUPS_RPC, {"p_game_date": game_date})
+    log(f"Confirmed-lineup overlay: {json.dumps(lineup_result, default=str)}")
 
     rows = rest_get(
         FEATURE_TABLE,
@@ -133,9 +140,7 @@ def run_daily(game_date: str) -> Dict[str, Any]:
             f"No pitcher-K feature rows found for {game_date} after refresh."
         )
 
-    pitcher_ids = [r.get("pitcher_id") for r in rows if r.get("pitcher_id") is not None]
-    duplicate_count = len(pitcher_ids) - len(set((r.get("game_pk"), r.get("pitcher_id")) for r in rows))
-
+    duplicate_count = len(rows) - len(set((r.get("game_pk"), r.get("pitcher_id")) for r in rows))
     if duplicate_count:
         raise PitcherKFeatureError(
             f"Duplicate pitcher-game rows detected after refresh: {duplicate_count}"
@@ -218,17 +223,8 @@ def parse_args() -> argparse.Namespace:
         help="Run historical backfill mode. Requires --start-date and --end-date.",
     )
 
-    parser.add_argument(
-        "--start-date",
-        type=validate_iso_date,
-        help="Backfill start date (YYYY-MM-DD).",
-    )
-    parser.add_argument(
-        "--end-date",
-        type=validate_iso_date,
-        help="Backfill end date (YYYY-MM-DD).",
-    )
-
+    parser.add_argument("--start-date", type=validate_iso_date)
+    parser.add_argument("--end-date", type=validate_iso_date)
     return parser.parse_args()
 
 

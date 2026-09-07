@@ -267,6 +267,17 @@ def run(args: argparse.Namespace) -> None:
     artifact = model["artifact"]
     rows = fetch_rows(game_date, artifact)
 
+    if args.confirmed_only or args.prediction_stage == "final":
+        rows = [r for r in rows if bool(r.get("lineup_confirmed"))]
+        if not rows:
+            log(json.dumps({
+                "status": "no_confirmed_lineups",
+                "date": game_date,
+                "prediction_stage": args.prediction_stage,
+                "rows": 0,
+            }, indent=2))
+            return
+
     prep = artifact["preprocessing"]
     model_art = artifact["model_artifact"]
     dist = artifact["distribution_artifact"]
@@ -275,8 +286,21 @@ def run(args: argparse.Namespace) -> None:
     alpha = float(dist["alpha"])
     now = dt.datetime.now(dt.timezone.utc)
     output: List[Dict[str, Any]] = []
+    skipped_started = 0
 
     for row in rows:
+        game_time = parse_ts(row.get("game_time_utc"))
+        after_start = bool(game_time is not None and game_time <= now)
+
+        if after_start and args.skip_started:
+            skipped_started += 1
+            continue
+        if after_start and game_date == ny_today() and not args.allow_after_start:
+            raise ScoreError(
+                f"Refusing to write today's predictions after start time for game {row.get('game_pk')}. "
+                "Use --skip-started for Phase 6 final refreshes or --allow-after-start only for recovery."
+            )
+
         x = transform(row, prep)
         if len(x) != len(coefs):
             raise ScoreError(f"Encoded dimension mismatch for pitcher {row.get('pitcher_id')}: {len(x)} vs {len(coefs)}")
@@ -285,20 +309,19 @@ def run(args: argparse.Namespace) -> None:
         pmf = pmf_nb(mu, alpha)
         if abs(float(pmf.sum()) - 1.0) > 1e-8:
             raise ScoreError("PMF failed sum-to-one validation")
+
         status, reasons = quality(row)
-        game_time = parse_ts(row.get("game_time_utc"))
-        after_start = bool(game_time is not None and game_time <= now)
-        if after_start and game_date == ny_today() and not args.allow_after_start:
-            raise ScoreError(
-                f"Refusing to write today's predictions after start time for game {row.get('game_pk')}. "
-                "Use --allow-after-start only for Phase 3 recovery/validation."
-            )
         if after_start:
             reasons = list(reasons) + ["scored_after_start_recovery"]
             if status == "ready":
                 status = "limited"
 
         probs = {f"{line:.1f}": p_over(pmf, line) for line in LINES}
+        source = (
+            "github_pitcher_k_phase6_confirmed_lineup_scorer"
+            if args.prediction_stage == "final"
+            else "github_pitcher_k_phase4_shadow_scorer"
+        )
         output.append({
             "prediction_run_date": game_date,
             "game_date": game_date,
@@ -328,22 +351,34 @@ def run(args: argparse.Namespace) -> None:
             "p_over_8_5": probs["8.5"],
             "quality_status": status,
             "quality_reasons": reasons,
-            "prediction_source": "github_pitcher_k_phase4_shadow_scorer",
+            "prediction_source": source,
             "scored_after_start": after_start,
             "prediction_mode": "recovery" if after_start else "shadow",
+            "prediction_stage": args.prediction_stage,
             "prediction_created_at": now.isoformat(),
             "updated_at": now.isoformat(),
         })
+
+    if not output:
+        log(json.dumps({
+            "status": "nothing_to_score",
+            "date": game_date,
+            "prediction_stage": args.prediction_stage,
+            "skipped_started": skipped_started,
+        }, indent=2))
+        return
 
     if args.dry_run:
         log(json.dumps({
             "date": game_date,
             "model_run_id": run["model_run_id"],
             "model_version": run["model_version"],
+            "prediction_stage": args.prediction_stage,
             "rows": len(output),
             "ready": sum(r["quality_status"] == "ready" for r in output),
             "limited": sum(r["quality_status"] == "limited" for r in output),
             "ineligible": sum(r["quality_status"] == "ineligible" for r in output),
+            "skipped_started": skipped_started,
             "dry_run": True,
         }, indent=2))
         return
@@ -351,18 +386,20 @@ def run(args: argparse.Namespace) -> None:
     rest_upsert(
         "mlb_ml_pitcher_k_predictions",
         output,
-        "prediction_run_date,game_pk,pitcher_id,model_run_id",
+        "prediction_run_date,game_pk,pitcher_id,model_run_id,prediction_stage",
     )
     log(json.dumps({
         "status": "complete",
         "date": game_date,
         "model_run_id": run["model_run_id"],
         "model_version": run["model_version"],
+        "prediction_stage": args.prediction_stage,
         "rows": len(output),
         "ready": sum(r["quality_status"] == "ready" for r in output),
         "limited": sum(r["quality_status"] == "limited" for r in output),
         "ineligible": sum(r["quality_status"] == "ineligible" for r in output),
         "scored_after_start": sum(bool(r["scored_after_start"]) for r in output),
+        "skipped_started": skipped_started,
         "min_mean_k": min(r["predicted_mean_k"] for r in output),
         "max_mean_k": max(r["predicted_mean_k"] for r in output),
     }, indent=2))
@@ -373,6 +410,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--date", default="")
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--allow-after-start", action="store_true")
+    p.add_argument("--prediction-stage", choices=("preliminary", "final"), default="preliminary")
+    p.add_argument("--confirmed-only", action="store_true")
+    p.add_argument("--skip-started", action="store_true")
     return p.parse_args()
 
 

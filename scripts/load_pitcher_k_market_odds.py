@@ -61,15 +61,11 @@ def get_json(path: str, params: dict, max_attempts: int = 4):
                     {k.lower(): v for k, v in response.headers.items()},
                 )
         except HTTPError as exc:
-            # Retry transient provider/server/rate-limit failures only.
             if exc.code not in {408, 425, 429, 500, 502, 503, 504} or attempt == max_attempts:
                 body = exc.read().decode("utf-8", errors="replace")
                 raise RuntimeError(f"Odds API HTTP {exc.code}: {body}") from exc
             wait_seconds = 2 ** (attempt - 1)
-            print(
-                f"Transient Odds API HTTP {exc.code}; retrying "
-                f"{attempt}/{max_attempts} after {wait_seconds}s..."
-            )
+            print(f"Transient Odds API HTTP {exc.code}; retrying {attempt}/{max_attempts} after {wait_seconds}s...")
             time.sleep(wait_seconds)
         except (URLError, ConnectionResetError, TimeoutError, OSError) as exc:
             if attempt == max_attempts:
@@ -77,10 +73,7 @@ def get_json(path: str, params: dict, max_attempts: int = 4):
                     f"Odds API network request failed after {max_attempts} attempts: {exc}"
                 ) from exc
             wait_seconds = 2 ** (attempt - 1)
-            print(
-                f"Transient Odds API network error ({exc}); retrying "
-                f"{attempt}/{max_attempts} after {wait_seconds}s..."
-            )
+            print(f"Transient Odds API network error ({exc}); retrying {attempt}/{max_attempts} after {wait_seconds}s...")
             time.sleep(wait_seconds)
 
     raise RuntimeError("Odds API request failed unexpectedly")
@@ -105,11 +98,7 @@ def main() -> int:
     target_date = os.getenv("ODDS_TARGET_DATE") or datetime.now(ET).date().isoformat()
     regions = os.getenv("ODDS_REGIONS", "us")
     books_raw = (os.getenv("BOOKMAKERS") or "all").strip().lower()
-    books = (
-        None
-        if books_raw in {"all", "*", "any", ""}
-        else {x.strip() for x in books_raw.split(",") if x.strip()}
-    )
+    books = None if books_raw in {"all", "*", "any", ""} else {x.strip() for x in books_raw.split(",") if x.strip()}
 
     predictions = (
         sb.table("mlb_ml_pitcher_k_predictions")
@@ -125,6 +114,22 @@ def main() -> int:
         key = normalize_name(prediction.get("pitcher_name") or "")
         if key:
             by_name.setdefault(key, []).append(prediction)
+
+    # Phase 5 cleanup: resolve a sportsbook pitcher to the pitcher master even when
+    # today's starter/prediction row is not available yet. This keeps the market
+    # identity stable and allows a later confirmed-starter prediction to join.
+    pitcher_master = (
+        sb.table("mlb_pitchers")
+        .select("pitcher_id,full_name")
+        .execute()
+        .data
+        or []
+    )
+    master_by_name: dict[str, list[dict]] = {}
+    for pitcher in pitcher_master:
+        key = normalize_name(pitcher.get("full_name") or "")
+        if key:
+            master_by_name.setdefault(key, []).append(pitcher)
 
     events, headers = get_json(
         "/sports/baseball_mlb/events",
@@ -157,9 +162,7 @@ def main() -> int:
         processed += 1
 
         for bookmaker in payload.get("bookmakers", []) or []:
-            book_key = str(
-                bookmaker.get("key") or bookmaker.get("title") or "unknown"
-            ).lower()
+            book_key = str(bookmaker.get("key") or bookmaker.get("title") or "unknown").lower()
             if books and book_key not in books:
                 continue
 
@@ -180,17 +183,17 @@ def main() -> int:
                     except (TypeError, ValueError):
                         continue
 
-                    pitcher_name = (
-                        outcome.get("description")
-                        or outcome.get("participant")
-                        or outcome.get("player")
-                    )
+                    pitcher_name = outcome.get("description") or outcome.get("participant") or outcome.get("player")
                     if not pitcher_name:
                         continue
 
                     norm = normalize_name(str(pitcher_name))
                     matches = by_name.get(norm, [])
                     resolved = matches[0] if len(matches) == 1 else {}
+
+                    master_matches = master_by_name.get(norm, [])
+                    master_resolved = master_matches[0] if len(master_matches) == 1 else {}
+                    resolved_pitcher_id = resolved.get("pitcher_id") or master_resolved.get("pitcher_id")
 
                     row = {
                         "odds_provider": "the_odds_api",
@@ -202,7 +205,7 @@ def main() -> int:
                         "commence_time_utc": commence,
                         "home_team": payload.get("home_team") or event.get("home_team"),
                         "away_team": payload.get("away_team") or event.get("away_team"),
-                        "pitcher_id": resolved.get("pitcher_id"),
+                        "pitcher_id": resolved_pitcher_id,
                         "pitcher_name_raw": str(pitcher_name),
                         "normalized_pitcher_name": norm,
                         "market_key": "pitcher_strikeouts",
