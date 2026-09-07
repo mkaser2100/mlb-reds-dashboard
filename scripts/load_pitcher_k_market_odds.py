@@ -4,7 +4,9 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import time
 from datetime import datetime, timezone
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
@@ -47,15 +49,41 @@ def american_to_implied(price: int) -> float:
     return abs(price) / (abs(price) + 100) if price < 0 else 100 / (price + 100)
 
 
-def get_json(path: str, params: dict):
+def get_json(path: str, params: dict, max_attempts: int = 4):
     url = f"{API_BASE}{path}?{urlencode(params)}"
-    with urlopen(
-        Request(url, headers={"User-Agent": "mlb-hit-lab/1.0"}), timeout=45
-    ) as response:
-        return (
-            json.loads(response.read().decode()),
-            {k.lower(): v for k, v in response.headers.items()},
-        )
+    req = Request(url, headers={"User-Agent": "mlb-hit-lab/1.0"})
+
+    for attempt in range(1, max_attempts + 1):
+        try:
+            with urlopen(req, timeout=45) as response:
+                return (
+                    json.loads(response.read().decode()),
+                    {k.lower(): v for k, v in response.headers.items()},
+                )
+        except HTTPError as exc:
+            # Retry transient provider/server/rate-limit failures only.
+            if exc.code not in {408, 425, 429, 500, 502, 503, 504} or attempt == max_attempts:
+                body = exc.read().decode("utf-8", errors="replace")
+                raise RuntimeError(f"Odds API HTTP {exc.code}: {body}") from exc
+            wait_seconds = 2 ** (attempt - 1)
+            print(
+                f"Transient Odds API HTTP {exc.code}; retrying "
+                f"{attempt}/{max_attempts} after {wait_seconds}s..."
+            )
+            time.sleep(wait_seconds)
+        except (URLError, ConnectionResetError, TimeoutError, OSError) as exc:
+            if attempt == max_attempts:
+                raise RuntimeError(
+                    f"Odds API network request failed after {max_attempts} attempts: {exc}"
+                ) from exc
+            wait_seconds = 2 ** (attempt - 1)
+            print(
+                f"Transient Odds API network error ({exc}); retrying "
+                f"{attempt}/{max_attempts} after {wait_seconds}s..."
+            )
+            time.sleep(wait_seconds)
+
+    raise RuntimeError("Odds API request failed unexpectedly")
 
 
 def stable_load_key(row: dict) -> str:
