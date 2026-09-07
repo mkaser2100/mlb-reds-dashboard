@@ -146,3 +146,10 @@
   justify-content:center !important;
   width:100% !important;
 }
+
+
+/* Phase 9A logo-centering root-cause fix — TB/HR only
+   Hide the empty opponent-logo placeholder so a lone team logo is truly centered. */
+#mlbHitBoardContent .phase4b-power-table tr.p9a-exact-card .p9a-card-logos .p9a-logo-empty{
+  display:none !important;
+}
