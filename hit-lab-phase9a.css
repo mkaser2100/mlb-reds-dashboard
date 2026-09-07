@@ -1275,3 +1275,131 @@
     row-gap: 5px !important;
   }
 }
+
+
+/* =========================================================
+   Phase 9A wireframe refinement — exact production selectors
+   ========================================================= */
+
+/* Summary metrics moved into header */
+#mlbHitBoardContent .p9a-summary-header {
+  display:flex !important;
+  justify-content:space-between !important;
+  align-items:flex-start !important;
+  gap:20px !important;
+  margin-bottom:14px !important;
+}
+#mlbHitBoardContent .p9a-summary-title h2 { margin:6px 0 0 !important; }
+#mlbHitBoardContent .p9a-summary-metrics {
+  display:flex !important;
+  gap:8px !important;
+  flex-wrap:wrap !important;
+  justify-content:flex-end !important;
+  margin:0 !important;
+}
+#mlbHitBoardContent .daily-summary-card.consensus-outlook-card .outlook-main > .eyebrow,
+#mlbHitBoardContent .daily-summary-card.consensus-outlook-card .outlook-main > h2 { display:none !important; }
+
+/* Compact tip sourced from actual .mlb-hit-board-tip */
+#mlbHitBoardContent .mlb-hit-board-tip.p9a-tip-compact {
+  display:flex !important;
+  align-items:center !important;
+  gap:7px !important;
+  min-height:42px !important;
+  max-height:48px !important;
+  padding:8px 12px !important;
+  margin:10px 0 12px !important;
+  border-radius:10px !important;
+  font-size:.72rem !important;
+  line-height:1.15 !important;
+  background:rgba(10,22,39,.34) !important;
+  border:1px solid rgba(56,189,248,.10) !important;
+  overflow:hidden !important;
+}
+#mlbHitBoardContent .mlb-hit-board-tip.p9a-tip-compact strong { color:#dbeafe !important; }
+#mlbHitBoardContent .mlb-hit-board-tip.p9a-tip-compact span { color:#7f8da3 !important; }
+
+/* Power rows now follow the wireframe hierarchy */
+#mlbHitBoardContent .phase4b-power-table thead { display:none !important; }
+#mlbHitBoardContent .phase4b-power-table tbody {
+  display:grid !important;
+  gap:10px !important;
+}
+#mlbHitBoardContent .phase4b-power-table tr[data-p9a-power-card="1"] {
+  display:grid !important;
+  grid-template-columns:52px minmax(300px,1.5fr) minmax(150px,.72fr) minmax(150px,.72fr) minmax(150px,.68fr) !important;
+  grid-template-areas:"rank player team why prob" !important;
+  gap:16px !important;
+  align-items:center !important;
+  min-height:96px !important;
+  padding:14px 18px !important;
+  border-radius:16px !important;
+  border:1px solid rgba(56,189,248,.22) !important;
+  background:radial-gradient(circle at 84% 50%,rgba(56,189,248,.05),transparent 28%),linear-gradient(90deg,rgba(8,19,36,.98),rgba(9,18,34,.96)) !important;
+}
+#mlbHitBoardContent .phase4b-power-table .p9a-rank { grid-area:rank !important; }
+#mlbHitBoardContent .phase4b-power-table .p9a-player { grid-area:player !important; position:relative; padding-top:16px !important; }
+#mlbHitBoardContent .phase4b-power-table .p9a-team { grid-area:team !important; }
+#mlbHitBoardContent .phase4b-power-table .p9a-why { grid-area:why !important; justify-self:end !important; max-width:150px !important; }
+#mlbHitBoardContent .phase4b-power-table .p9a-probability {
+  grid-area:prob !important;
+  justify-self:end !important;
+  text-align:right !important;
+  min-width:130px !important;
+}
+#mlbHitBoardContent .phase4b-power-table .p9a-hide { display:none !important; }
+#mlbHitBoardContent .phase4b-power-table .p9a-target-title {
+  color:#f8fafc !important;
+  font-size:1.04rem !important;
+  font-weight:900 !important;
+  line-height:1.15 !important;
+}
+#mlbHitBoardContent .phase4b-power-table .p9a-probability .score-bar { display:none !important; }
+#mlbHitBoardContent .phase4b-power-table .p9a-probability .score-value {
+  display:block !important;
+  color:#f8fafc !important;
+  font-size:2rem !important;
+  line-height:1 !important;
+  font-weight:950 !important;
+  letter-spacing:-.045em !important;
+}
+#mlbHitBoardContent .phase4b-power-table .p9a-model-label {
+  display:block !important;
+  margin-top:7px !important;
+  color:#6f7f96 !important;
+  font-size:.56rem !important;
+  font-weight:950 !important;
+  letter-spacing:.16em !important;
+}
+#mlbHitBoardContent .phase4b-power-table .p9a-why .primary-why-wrap {
+  display:inline-flex !important;
+  align-items:center !important;
+  gap:7px !important;
+  max-width:150px !important;
+}
+#mlbHitBoardContent .phase4b-power-table[data-p9a-target="TB"] tr[data-p9a-power-card="1"]::before,
+#mlbHitBoardContent .phase4b-power-table[data-p9a-target="HR"] tr[data-p9a-power-card="1"]::before {
+  position:absolute;
+}
+
+/* Hit cards: preserve odds/why, remove confidence from scan-first row */
+#mlbHitBoardContent tr[data-p9a-hit-card="1"] td.p9a-hide-confidence { display:none !important; }
+#mlbHitBoardContent tr[data-p9a-hit-card="1"] .probability-cell .score-value {
+  font-size:1.7rem !important;
+  font-weight:950 !important;
+}
+
+@media (max-width:1180px){
+  #mlbHitBoardContent .phase4b-power-table tr[data-p9a-power-card="1"] {
+    grid-template-columns:48px minmax(240px,1.35fr) minmax(130px,.65fr) minmax(140px,.68fr) minmax(125px,.6fr) !important;
+  }
+}
+@media (max-width:760px){
+  #mlbHitBoardContent .p9a-summary-header { display:grid !important; grid-template-columns:1fr !important; gap:10px !important; }
+  #mlbHitBoardContent .p9a-summary-metrics { justify-content:flex-start !important; }
+  #mlbHitBoardContent .phase4b-power-table tr[data-p9a-power-card="1"] {
+    grid-template-columns:40px minmax(0,1fr) auto !important;
+    grid-template-areas:"rank player prob" "rank team prob" "rank why prob" !important;
+    row-gap:5px !important;
+  }
+}

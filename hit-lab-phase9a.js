@@ -1,192 +1,168 @@
-/* MLB Hit Lab — Phase 9A renderer refinement V2
-   Directly normalizes the rendered DOM using actual component markers.
-   No model/data logic changes. */
+/* MLB Hit Lab — Phase 9A wireframe refinement
+   Uses exact production selectors from app-v4.js.
+   No model/data fetching or scoring logic changes. */
 (() => {
-  const BUILD = "phase9a-renderer-refinement-v2-20260907g";
+  const BUILD = "phase9a-wireframe-refinement-20260907h";
   const ROOT_ID = "mlbHitBoardContent";
 
-  const targetFromTitle = (title) => {
-    const t = String(title || "").toLowerCase();
-    if (t.includes("home run")) return "HR";
-    if (t.includes("total base") || t.includes("2+ tb")) return "TB";
-    return "HIT";
-  };
+  function targetFromRoot(root) {
+    const title = String(root.querySelector('.board-card h2')?.textContent || '').toLowerCase();
+    if (title.includes('home run')) return 'HR';
+    if (title.includes('total base') || title.includes('2+')) return 'TB';
+    return 'HIT';
+  }
 
-  function enhancePowerBoard(board, target) {
-    const rows = [...board.querySelectorAll("tr.mlb-clickable-row")];
-    if (!rows.length) return;
+  function normalizePowerRows(root) {
+    const table = root.querySelector('.phase4b-power-table');
+    if (!table) return;
+    const target = targetFromRoot(root);
+    table.dataset.p9aTarget = target;
 
-    board.dataset.p9aTarget = target;
-
-    rows.forEach((row) => {
-      row.dataset.p9aTarget = target;
+    table.querySelectorAll('tbody tr').forEach((row) => {
       const cells = [...row.children];
-      cells.forEach((c) => {
-        c.classList.remove(
-          "p9a-rank-cell","p9a-player-cell","p9a-team-cell",
-          "p9a-prob-cell","p9a-signal-cell","p9a-hidden-cell"
-        );
+      const probabilityCell = row.querySelector('.probability-cell')?.closest('td') || null;
+      const whyCell = row.querySelector('.why-cell') || null;
+      const rankCell = cells[0] || null;
+      const playerCell = cells[1] || null;
+      const teamCell = cells[2] || null;
+
+      row.dataset.p9aPowerCard = '1';
+      row.dataset.p9aTarget = target;
+
+      cells.forEach((cell) => {
+        cell.classList.remove('p9a-rank','p9a-player','p9a-team','p9a-probability','p9a-why','p9a-hide');
       });
+      rankCell?.classList.add('p9a-rank');
+      playerCell?.classList.add('p9a-player');
+      teamCell?.classList.add('p9a-team');
+      probabilityCell?.classList.add('p9a-probability');
+      whyCell?.classList.add('p9a-why');
 
-      if (cells[0]) cells[0].classList.add("p9a-rank-cell");
-      if (cells[1]) cells[1].classList.add("p9a-player-cell");
-      if (cells[2]) cells[2].classList.add("p9a-team-cell");
-      if (cells[3]) cells[3].classList.add("p9a-prob-cell");
-
-      const signalCell =
-        cells.find((cell) =>
-          cell.classList.contains("why-cell") ||
-          cell.querySelector(".primary-why-wrap,.why-pill,.reason-count")
-        ) || cells[5] || null;
-
-      if (signalCell) signalCell.classList.add("p9a-signal-cell");
-
-      cells.forEach((cell, idx) => {
-        const keep =
-          idx <= 3 ||
-          cell === signalCell;
+      cells.forEach((cell) => {
+        const keep = [rankCell, playerCell, teamCell, probabilityCell, whyCell].includes(cell);
         if (!keep) {
-          cell.classList.add("p9a-hidden-cell");
+          cell.classList.add('p9a-hide');
           cell.hidden = true;
-          cell.setAttribute("aria-hidden", "true");
+          cell.setAttribute('aria-hidden','true');
         } else {
           cell.hidden = false;
-          cell.removeAttribute("aria-hidden");
+          cell.removeAttribute('aria-hidden');
         }
       });
-    });
-  }
 
-  function enhanceHitBoard(board) {
-    board.dataset.p9aTarget = "HIT";
-    [...board.querySelectorAll("tr.mlb-clickable-row")].forEach((row) => {
-      row.dataset.p9aTarget = "HIT";
-    });
-  }
-
-  function enhanceBoards(root) {
-    root.querySelectorAll(".board-card").forEach((board) => {
-      if (!board.querySelector("tr.mlb-clickable-row")) return;
-      const target = targetFromTitle(board.querySelector("h2")?.textContent);
-      if (target === "HIT") enhanceHitBoard(board);
-      else enhancePowerBoard(board, target);
-    });
-  }
-
-  function findSummaryMetricContainer(card) {
-    const candidates = [...card.querySelectorAll("div,section")];
-    return candidates.find((el) => {
-      const txt = String(el.textContent || "").toLowerCase();
-      const direct = [...el.children].map((c) => String(c.textContent || "").toLowerCase());
-      const metricChildren = direct.filter((t) =>
-        t.includes("scored") || t.includes("shown") || t.includes("consensus") || t.includes("shadow model")
-      );
-      return metricChildren.length >= 2 && metricChildren.length === el.children.length;
-    }) || null;
-  }
-
-  function enhanceSummary(root) {
-    const card = root.querySelector(".daily-summary-card.consensus-outlook-card");
-    if (!card) return;
-
-    let header = card.querySelector(".p9a-summary-header");
-    if (!header) {
-      header = document.createElement("div");
-      header.className = "p9a-summary-header";
-      const main = card.querySelector(".outlook-main") || card.firstElementChild;
-      const eyebrow = main?.querySelector(".eyebrow");
-      const title = main?.querySelector("h2");
-      const titleWrap = document.createElement("div");
-      titleWrap.className = "p9a-summary-title";
-      if (eyebrow) titleWrap.appendChild(eyebrow);
-      if (title) titleWrap.appendChild(title);
-      header.appendChild(titleWrap);
-
-      const metricContainer = findSummaryMetricContainer(card);
-      if (metricContainer) {
-        metricContainer.classList.add("p9a-summary-metrics");
-        header.appendChild(metricContainer);
+      // Add wireframe-style labels without changing underlying data.
+      if (playerCell) {
+        let meta = playerCell.querySelector('.p9a-target-title');
+        if (!meta) {
+          meta = document.createElement('div');
+          meta.className = 'p9a-target-title';
+          const name = playerCell.querySelector('.player-name')?.textContent?.trim() || '';
+          meta.textContent = `${name} · ${target === 'HR' ? 'HOME RUN' : '2+ TOTAL BASES'}`;
+          const playerName = playerCell.querySelector('.player-name');
+          if (playerName) playerName.style.display = 'none';
+          playerCell.appendChild(meta);
+        }
       }
 
-      card.insertBefore(header, card.firstChild);
-    }
-
-    const list = card.querySelector(".consensus-play-list");
-    if (list) list.classList.add("p9a-summary-list");
-  }
-
-  function compactTip(root) {
-    const candidates = [...root.querySelectorAll("section,div")];
-    const tip = candidates.find((el) => {
-      const txt = String(el.textContent || "").trim();
-      if (!/^Tip:/i.test(txt)) return false;
-      if (txt.length > 350) return false;
-      // choose the outer visible tip block, not a nested child
-      return ![...el.children].some((c) => /^Tip:/i.test(String(c.textContent || "").trim()));
+      if (probabilityCell) {
+        probabilityCell.classList.add('p9a-big-model');
+        const label = probabilityCell.querySelector('.p9a-model-label') || document.createElement('small');
+        label.className = 'p9a-model-label';
+        label.textContent = 'MODEL';
+        if (!label.parentNode) probabilityCell.appendChild(label);
+      }
     });
-    if (!tip || tip.dataset.p9aCompact === "1") return;
-    tip.dataset.p9aCompact = "1";
-    tip.classList.add("p9a-tip-strip");
-    tip.innerHTML = '<strong>Tip:</strong><span>Select a player for matchup detail, recent form and model signals.</span>';
   }
 
-  function overlap(a, b) {
+  function normalizeHitRows(root) {
+    const table = root.querySelector('.v3-board-table:not(.phase4b-power-table)');
+    if (!table) return;
+    table.querySelectorAll('tbody tr').forEach((row) => {
+      row.dataset.p9aHitCard = '1';
+      const confidence = row.querySelector('.confidence-badge')?.closest('td');
+      if (confidence) {
+        confidence.hidden = true;
+        confidence.classList.add('p9a-hide-confidence');
+      }
+      const prob = row.querySelector('.probability-cell')?.closest('td');
+      if (prob) prob.classList.add('p9a-big-model');
+    });
+  }
+
+  function compactTips(root) {
+    root.querySelectorAll('.mlb-hit-board-tip').forEach((tip) => {
+      if (tip.dataset.p9aCompact === '1') return;
+      tip.dataset.p9aCompact = '1';
+      tip.innerHTML = '<strong>ⓘ</strong><span>Select a player for matchup detail, recent form and model signals.</span>';
+      tip.classList.add('p9a-tip-compact');
+    });
+  }
+
+  function normalizeSummary(root) {
+    const card = root.querySelector('.daily-summary-card.consensus-outlook-card');
+    if (!card) return;
+    const metrics = card.querySelector('.summary-metrics');
+    const main = card.querySelector('.outlook-main');
+    if (!metrics || !main) return;
+
+    let header = card.querySelector('.p9a-summary-header');
+    if (!header) {
+      header = document.createElement('div');
+      header.className = 'p9a-summary-header';
+      const titleWrap = document.createElement('div');
+      titleWrap.className = 'p9a-summary-title';
+      const eyebrow = main.querySelector('.eyebrow');
+      const title = main.querySelector('h2');
+      if (eyebrow) titleWrap.appendChild(eyebrow);
+      if (title) titleWrap.appendChild(title);
+      header.append(titleWrap, metrics);
+      card.insertBefore(header, main);
+      metrics.classList.add('p9a-summary-metrics');
+    }
+  }
+
+  function overlap(a,b) {
     if (!a || !b) return false;
-    const r1 = a.getBoundingClientRect();
-    const r2 = b.getBoundingClientRect();
-    if (!r1.width || !r1.height || !r2.width || !r2.height) return false;
-    return !(r1.right <= r2.left || r2.right <= r1.left || r1.bottom <= r2.top || r2.bottom <= r1.top);
+    const x=a.getBoundingClientRect(), y=b.getBoundingClientRect();
+    if (!x.width || !y.width) return false;
+    return !(x.right<=y.left || y.right<=x.left || x.bottom<=y.top || y.bottom<=x.top);
   }
 
-  function visualQa(root) {
-    const issues = [];
-    root.querySelectorAll('.board-card[data-p9a-target="TB"] .mlb-clickable-row, .board-card[data-p9a-target="HR"] .mlb-clickable-row')
-      .forEach((row, idx) => {
-        const visible = [...row.children].filter((c) => !c.hidden && getComputedStyle(c).display !== "none");
-        if (visible.length !== 5) issues.push(`power row ${idx + 1}: expected 5 visible cells, got ${visible.length}`);
-        const prob = row.querySelector(".p9a-prob-cell");
-        const signal = row.querySelector(".p9a-signal-cell");
-        if (overlap(prob, signal)) issues.push(`power row ${idx + 1}: probability overlaps signal`);
-      });
-
-    const summary = root.querySelector(".daily-summary-card.consensus-outlook-card");
-    if (summary && !summary.querySelector(".p9a-summary-header")) issues.push("summary header not normalized");
-    const tip = root.querySelector(".p9a-tip-strip");
-    if (!tip) issues.push("tip not compacted");
-
-    root.dataset.p9aQa = issues.length ? "fail" : "pass";
-    if (issues.length) console.warn("Phase 9A visual QA", issues);
-    else console.info("Phase 9A visual QA: pass");
+  function qa(root) {
+    const issues=[];
+    root.querySelectorAll('[data-p9a-power-card="1"]').forEach((row,i)=>{
+      const visible=[...row.children].filter(c=>!c.hidden && getComputedStyle(c).display!=='none');
+      const prob=row.querySelector('.p9a-probability');
+      const why=row.querySelector('.p9a-why');
+      const value=prob?.querySelector('.score-value')?.textContent?.trim();
+      if (visible.length!==5) issues.push(`power row ${i+1}: ${visible.length} visible cells`);
+      if (!value || value==='—') issues.push(`power row ${i+1}: missing model probability`);
+      if (overlap(prob,why)) issues.push(`power row ${i+1}: probability/why overlap`);
+    });
+    if (root.querySelector('.mlb-hit-board-tip:not(.p9a-tip-compact)')) issues.push('tip not compacted');
+    root.dataset.p9aQa=issues.length?'fail':'pass';
+    if (issues.length) console.warn('Phase 9A QA',issues); else console.info('Phase 9A QA: pass');
   }
 
   function enhance() {
-    const root = document.getElementById(ROOT_ID);
-    if (!root) return;
-    enhanceBoards(root);
-    enhanceSummary(root);
-    compactTip(root);
-    requestAnimationFrame(() => visualQa(root));
+    const root=document.getElementById(ROOT_ID); if(!root) return;
+    normalizePowerRows(root);
+    normalizeHitRows(root);
+    compactTips(root);
+    normalizeSummary(root);
+    requestAnimationFrame(()=>qa(root));
   }
 
-  function init() {
+  function init(){
     enhance();
-    const root = document.getElementById(ROOT_ID);
-    if (!root) return;
-    let scheduled = false;
-    new MutationObserver(() => {
-      if (scheduled) return;
-      scheduled = true;
-      requestAnimationFrame(() => {
-        scheduled = false;
-        enhance();
-      });
-    }).observe(root, {childList:true, subtree:true});
+    const root=document.getElementById(ROOT_ID); if(!root) return;
+    let queued=false;
+    new MutationObserver(()=>{
+      if(queued) return; queued=true;
+      requestAnimationFrame(()=>{queued=false; enhance();});
+    }).observe(root,{childList:true,subtree:true});
     console.info(`MLB Hit Lab ${BUILD} loaded`);
   }
 
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", init, {once:true});
-  } else {
-    init();
-  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',init,{once:true}); else init();
 })();
