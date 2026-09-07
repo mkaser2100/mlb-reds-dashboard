@@ -2,7 +2,7 @@
    Adds semantic data attributes to existing rendered leaderboard rows.
    No data queries and no model logic changes. */
 (() => {
-  const BUILD = "phase9a-refinement-20260907d";
+  const BUILD = "phase9a-refinement-v2-20260907e";
   const rootId = "mlbHitBoardContent";
 
   const normalize = (s) =>
@@ -54,10 +54,36 @@
     });
   }
 
+
+
+  function refineSemanticRoles(board) {
+    const target = board.dataset.p9aTarget || targetFromTitle(board.querySelector("h2")?.textContent);
+    const rows = [...board.querySelectorAll("tr.mlb-clickable-row")];
+    rows.forEach((row) => {
+      const cells = [...row.children];
+      cells.forEach((cell) => {
+        const col = String(cell.dataset.p9aCol || "");
+        const text = String(cell.textContent || "").trim().toLowerCase();
+
+        // Power boards expose model deployment status instead of market odds.
+        if ((target === "HR" || target === "TB") && (col.includes("status") || text === "shadow" || text === "live")) {
+          cell.dataset.p9aRole = "status";
+        }
+
+        if (col.includes("opponent-sp") || col.includes("opposing-pitcher") || col === "pitcher") {
+          cell.dataset.p9aRole = "pitcher";
+        }
+      });
+    });
+
+    const meta = board.querySelector(".board-meta");
+    if (meta) meta.dataset.p9aMeta = "true";
+  }
+
   function enhance() {
     const root = document.getElementById(rootId);
     if (!root) return;
-    root.querySelectorAll(".board-card").forEach(enhanceBoard);
+    root.querySelectorAll(".board-card").forEach((board) => { enhanceBoard(board); refineSemanticRoles(board); });
   }
 
   function init() {

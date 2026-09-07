@@ -769,3 +769,218 @@
     padding-top: 0 !important;
   }
 }
+
+
+/* =========================================================
+   Phase 9A refinement V2 — fixes from visual QA
+   ========================================================= */
+
+/* DAILY SUMMARY: preserve names/reasons and use all available width. */
+#mlbHitBoardContent .daily-summary-card.consensus-outlook-card {
+  display: block !important;
+  min-height: 0 !important;
+  padding: 18px 20px !important;
+}
+
+#mlbHitBoardContent .daily-summary-card.consensus-outlook-card .outlook-main {
+  width: 100% !important;
+  max-width: none !important;
+}
+
+#mlbHitBoardContent .daily-summary-card.consensus-outlook-card .consensus-play-list {
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  width: 100% !important;
+  max-width: none !important;
+  gap: 10px !important;
+  margin-top: 14px !important;
+}
+
+#mlbHitBoardContent .daily-summary-card.consensus-outlook-card .consensus-play-row {
+  display: grid !important;
+  grid-template-columns: 34px minmax(0, 1fr) auto !important;
+  align-items: center !important;
+  gap: 10px !important;
+  min-height: 74px !important;
+  padding: 10px 12px !important;
+  overflow: hidden !important;
+}
+
+#mlbHitBoardContent .daily-summary-card.consensus-outlook-card .consensus-player-copy {
+  display: grid !important;
+  min-width: 0 !important;
+  gap: 4px !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+}
+
+#mlbHitBoardContent .daily-summary-card.consensus-outlook-card .consensus-player-copy strong {
+  display: block !important;
+  color: #f8fafc !important;
+  font-size: .88rem !important;
+  font-weight: 900 !important;
+  line-height: 1.1 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+#mlbHitBoardContent .daily-summary-card.consensus-outlook-card .consensus-player-copy small {
+  display: block !important;
+  color: #7f8fa6 !important;
+  font-size: .66rem !important;
+  line-height: 1.25 !important;
+  white-space: normal !important;
+  overflow: hidden !important;
+  max-height: 2.5em !important;
+}
+
+#mlbHitBoardContent .daily-summary-card.consensus-outlook-card .consensus-rank-pills {
+  display: grid !important;
+  gap: 5px !important;
+  justify-items: end !important;
+  min-width: max-content !important;
+}
+
+/* Keep summary metrics compact and top-aligned if rendered outside .outlook-main. */
+#mlbHitBoardContent .daily-summary-card.consensus-outlook-card > :not(.outlook-main) {
+  margin-top: 0 !important;
+}
+
+/* HIT CARDS: simplify right side; confidence becomes quiet metadata, WHY stays primary. */
+#mlbHitBoardContent .board-card[data-p9a-target="HIT"] td[data-p9a-role="confidence"] {
+  color: #8a94a8 !important;
+  font-size: .68rem !important;
+  opacity: .72 !important;
+  justify-self: end !important;
+}
+
+#mlbHitBoardContent .board-card[data-p9a-target="HIT"] td[data-p9a-role="confidence"] > * {
+  transform: scale(.88) !important;
+  transform-origin: right center !important;
+  opacity: .82 !important;
+}
+
+#mlbHitBoardContent .board-card[data-p9a-target="HIT"] td[data-p9a-role="why"] {
+  justify-self: end !important;
+  max-width: 165px !important;
+}
+
+/* POWER CARDS: status is not odds. Remove the fake BEST ODDS label entirely. */
+#mlbHitBoardContent .board-card[data-p9a-target="HR"] td[data-p9a-role="status"],
+#mlbHitBoardContent .board-card[data-p9a-target="TB"] td[data-p9a-role="status"] {
+  grid-area: confidence !important;
+  justify-self: end !important;
+  text-align: right !important;
+}
+
+#mlbHitBoardContent .board-card[data-p9a-target="HR"] td[data-p9a-role="status"]::before,
+#mlbHitBoardContent .board-card[data-p9a-target="TB"] td[data-p9a-role="status"]::before,
+#mlbHitBoardContent .board-card[data-p9a-target="HR"] td[data-p9a-role="status"]::after,
+#mlbHitBoardContent .board-card[data-p9a-target="TB"] td[data-p9a-role="status"]::after {
+  content: none !important;
+  display: none !important;
+}
+
+/* Any legacy status cell that nth-child styling called odds: neutralize that label on power targets. */
+#mlbHitBoardContent .board-card[data-p9a-target="HR"] .mlb-clickable-row > td:nth-child(5)::before,
+#mlbHitBoardContent .board-card[data-p9a-target="TB"] .mlb-clickable-row > td:nth-child(5)::before {
+  content: none !important;
+  display: none !important;
+}
+
+#mlbHitBoardContent .board-card[data-p9a-target="HR"] .mlb-clickable-row > td:nth-child(5),
+#mlbHitBoardContent .board-card[data-p9a-target="TB"] .mlb-clickable-row > td:nth-child(5) {
+  text-align: right !important;
+  font-size: .72rem !important;
+  color: #facc15 !important;
+}
+
+/* Free visual space on power cards: opposing pitcher stays secondary, but does not collide. */
+#mlbHitBoardContent .board-card[data-p9a-target="HR"] td[data-p9a-role="pitcher"],
+#mlbHitBoardContent .board-card[data-p9a-target="TB"] td[data-p9a-role="pitcher"] {
+  display: none !important;
+}
+
+#mlbHitBoardContent .board-card[data-p9a-target="HR"] .mlb-clickable-row,
+#mlbHitBoardContent .board-card[data-p9a-target="TB"] .mlb-clickable-row {
+  grid-template-columns: 48px minmax(245px,1.45fr) minmax(150px,.78fr) minmax(125px,.62fr) minmax(100px,.5fr) minmax(145px,.72fr) !important;
+  grid-template-areas: "rank player team probability confidence why" !important;
+}
+
+/* Target-specific chip colors. */
+#mlbHitBoardContent .board-card[data-p9a-target="HIT"] .mlb-clickable-row::before {
+  color: #a3e635 !important;
+  border-color: rgba(163,230,53,.45) !important;
+  background: rgba(83,118,18,.08) !important;
+}
+#mlbHitBoardContent .board-card[data-p9a-target="TB"] .mlb-clickable-row::before {
+  color: #67e8f9 !important;
+  border-color: rgba(34,211,238,.42) !important;
+  background: rgba(8,145,178,.08) !important;
+}
+#mlbHitBoardContent .board-card[data-p9a-target="HR"] .mlb-clickable-row::before {
+  color: #f0abfc !important;
+  border-color: rgba(217,70,239,.40) !important;
+  background: rgba(126,34,206,.08) !important;
+}
+
+/* Raw model IDs are developer detail, not primary UI. */
+#mlbHitBoardContent .board-card[data-p9a-target] .board-meta span:last-child {
+  display: none !important;
+}
+
+/* TIP: make it a slim helper, not a content card. */
+#mlbHitBoardContent .performance-note,
+#mlbHitBoardContent .market-disclaimer,
+#mlbHitBoardContent [class*="tip-"] {
+  min-height: 0 !important;
+  padding: 8px 12px !important;
+  margin-top: 10px !important;
+  border-radius: 11px !important;
+  font-size: .70rem !important;
+  line-height: 1.25 !important;
+  background: rgba(10,22,39,.42) !important;
+  border-color: rgba(56,189,248,.11) !important;
+  opacity: .82 !important;
+}
+
+/* MATCHUP / PITCHER STACK: compress by ~12% without losing readability. */
+#mlbHitBoardContent .phase5c-selected-game-matchup,
+#mlbHitBoardContent .phase4b-power-matchup,
+#mlbHitBoardContent [class*="matchup-card"] {
+  padding-top: 15px !important;
+  padding-bottom: 15px !important;
+}
+
+#mlbHitBoardContent .phase5c-selected-game-matchup .metric-card,
+#mlbHitBoardContent .phase4b-power-matchup .metric-card,
+#mlbHitBoardContent [class*="matchup-card"] [class*="metric"] {
+  min-height: 0 !important;
+  padding-top: 12px !important;
+  padding-bottom: 12px !important;
+}
+
+@media (max-width: 1180px) {
+  #mlbHitBoardContent .daily-summary-card.consensus-outlook-card .consensus-play-list {
+    grid-template-columns: repeat(3, minmax(0,1fr)) !important;
+  }
+  #mlbHitBoardContent .board-card[data-p9a-target="HR"] .mlb-clickable-row,
+  #mlbHitBoardContent .board-card[data-p9a-target="TB"] .mlb-clickable-row {
+    grid-template-columns: 44px minmax(220px,1.35fr) minmax(130px,.68fr) minmax(115px,.58fr) minmax(125px,.62fr) !important;
+    grid-template-areas: "rank player team probability why" !important;
+  }
+  #mlbHitBoardContent .board-card[data-p9a-target="HR"] td[data-p9a-role="status"],
+  #mlbHitBoardContent .board-card[data-p9a-target="TB"] td[data-p9a-role="status"] {
+    display: none !important;
+  }
+}
+
+@media (max-width: 760px) {
+  #mlbHitBoardContent .daily-summary-card.consensus-outlook-card .consensus-play-list {
+    grid-template-columns: 1fr !important;
+  }
+  #mlbHitBoardContent .daily-summary-card.consensus-outlook-card .consensus-play-row {
+    min-height: 68px !important;
+  }
+}
