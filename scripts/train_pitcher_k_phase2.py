@@ -8,6 +8,8 @@ import math
 import os
 import sys
 import traceback
+import time
+import random
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -31,6 +33,8 @@ CANDIDATES = ("historical_shrinkage", "negative_binomial_glm", "two_stage_bf_k_r
 LINES = (3.5, 4.5, 5.5, 6.5, 7.5, 8.5)
 MAX_BUCKET = 12
 EPS = 1e-12
+UPSERT_BATCH_SIZE = 75
+RETRYABLE_HTTP_CODES = {408, 425, 429, 500, 502, 503, 504, 520, 521, 522, 523, 524}
 
 CORE_FEATURES = [
     "prior_starts_season", "days_since_last_start",
@@ -84,7 +88,8 @@ def require_env() -> None:
         raise Phase2Error("Missing required environment variable(s): " + ", ".join(missing))
 
 
-def api_request(method: str, path: str, *, body: Any = None, headers: Optional[Mapping[str, str]] = None, timeout: int = 120) -> Any:
+def api_request(method: str, path: str, *, body: Any = None, headers: Optional[Mapping[str, str]] = None,
+                timeout: int = 120, max_attempts: int = 6) -> Any:
     req_headers = {
         "apikey": SUPABASE_KEY,
         "Authorization": f"Bearer {SUPABASE_KEY}",
@@ -93,16 +98,31 @@ def api_request(method: str, path: str, *, body: Any = None, headers: Optional[M
     if headers:
         req_headers.update(headers)
     data = None if body is None else json.dumps(body, separators=(",", ":"), default=str).encode("utf-8")
-    req = urllib.request.Request(f"{SUPABASE_URL}{path}", data=data, headers=req_headers, method=method)
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            raw = resp.read()
-            return None if not raw else json.loads(raw.decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")
-        raise Phase2Error(f"{method} {path} failed: HTTP {exc.code}: {detail}") from exc
-    except urllib.error.URLError as exc:
-        raise Phase2Error(f"{method} {path} failed: {exc}") from exc
+
+    last_error: Optional[BaseException] = None
+    for attempt in range(1, max_attempts + 1):
+        req = urllib.request.Request(f"{SUPABASE_URL}{path}", data=data, headers=req_headers, method=method)
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                raw = resp.read()
+                return None if not raw else json.loads(raw.decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")
+            last_error = exc
+            if exc.code not in RETRYABLE_HTTP_CODES or attempt >= max_attempts:
+                raise Phase2Error(f"{method} {path} failed: HTTP {exc.code}: {detail}") from exc
+            wait = min(20.0, (2.0 ** (attempt - 1)) + random.uniform(0.0, 0.75))
+            log(f"WARNING: transient Supabase HTTP {exc.code}; retry {attempt}/{max_attempts} in {wait:.1f}s")
+            time.sleep(wait)
+        except urllib.error.URLError as exc:
+            last_error = exc
+            if attempt >= max_attempts:
+                raise Phase2Error(f"{method} {path} failed after {max_attempts} attempts: {exc}") from exc
+            wait = min(20.0, (2.0 ** (attempt - 1)) + random.uniform(0.0, 0.75))
+            log(f"WARNING: transient Supabase network error; retry {attempt}/{max_attempts} in {wait:.1f}s: {exc}")
+            time.sleep(wait)
+
+    raise Phase2Error(f"{method} {path} failed: {last_error}")
 
 
 def rest_get(resource: str, params: Mapping[str, str]) -> List[Dict[str, Any]]:
@@ -129,8 +149,8 @@ def rest_insert(resource: str, rows: Any, *, return_representation: bool = False
 
 
 def rest_upsert(resource: str, rows: Sequence[Mapping[str, Any]], on_conflict: str) -> None:
-    for i in range(0, len(rows), 400):
-        batch = list(rows[i:i+400])
+    for i in range(0, len(rows), UPSERT_BATCH_SIZE):
+        batch = list(rows[i:i+UPSERT_BATCH_SIZE])
         query = urllib.parse.urlencode({"on_conflict": on_conflict}, safe=",")
         api_request(
             "POST", f"/rest/v1/{resource}?{query}", body=batch,
@@ -210,7 +230,7 @@ def build_preprocessor(features: Sequence[str], scale_numeric: bool) -> Tuple[Co
     num_pipe = Pipeline(num_steps)
     cat_pipe = Pipeline([
         ("imputer", SimpleImputer(strategy="most_frequent")),
-        ("onehot", OneHotEncoder(handle_unknown="ignore", sparse_output=False)),
+        ("onehot", OneHotEncoder(handle_unknown="ignore", drop="first", sparse_output=False)),
     ])
     pre = ColumnTransformer([
         ("num", num_pipe, nums),
