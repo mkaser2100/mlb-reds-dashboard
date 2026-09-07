@@ -328,8 +328,9 @@ def run(args: argparse.Namespace) -> None:
             "p_over_8_5": probs["8.5"],
             "quality_status": status,
             "quality_reasons": reasons,
-            "prediction_source": "github_pitcher_k_phase3_scorer",
+            "prediction_source": "github_pitcher_k_phase4_shadow_scorer",
             "scored_after_start": after_start,
+            "prediction_mode": "recovery" if after_start else "shadow",
             "prediction_created_at": now.isoformat(),
             "updated_at": now.isoformat(),
         })
