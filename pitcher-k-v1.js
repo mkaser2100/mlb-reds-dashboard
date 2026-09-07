@@ -1,6 +1,6 @@
 /* MLB Hit Lab — Pitcher K Board Phase 9 */
 (() => {
-  const BUILD = "pitcher-k-phase9-visual-alignment-20260907b";
+  const BUILD = "pitcher-k-phase9-hitboard-match-20260907c";
   const CACHE_TABLE = "mlb_pitcher_k_board_public_cache";
 
   const TEAM_ABBR = {

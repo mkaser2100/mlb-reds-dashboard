@@ -730,3 +730,203 @@
     grid-column: auto;
   }
 }
+
+
+/* Phase 9C — exact shell alignment with MLB Hit Board */
+#pitcherKContent .pk-control-card {
+  display: grid !important;
+  grid-template-columns:
+    minmax(0, 1.35fr)
+    minmax(0, 0.72fr)
+    minmax(0, 0.95fr) !important;
+  gap: 12px !important;
+  align-items: center !important;
+  margin: 12px 0 0 !important;
+  padding: 13px 14px !important;
+  border-radius: 18px !important;
+}
+
+#pitcherKContent .pk-mode-toggle {
+  min-width: 0 !important;
+  min-height: 46px !important;
+  padding: 3px !important;
+  border-radius: 14px !important;
+}
+
+#pitcherKContent .pk-mode {
+  min-width: 0 !important;
+  min-height: 40px !important;
+  padding: 0 14px !important;
+  border-radius: 11px !important;
+  font-size: .88rem !important;
+  line-height: 1 !important;
+}
+
+#pitcherKContent .pk-game-select {
+  min-width: 0 !important;
+  min-height: 46px !important;
+  height: 46px !important;
+  padding: 0 40px 0 13px !important;
+  border-radius: 14px !important;
+  font-size: .84rem !important;
+}
+
+#pitcherKContent .pk-model-badge {
+  grid-column: auto !important;
+  min-width: 0 !important;
+  width: 100% !important;
+  max-width: none !important;
+  min-height: 46px !important;
+  height: 46px !important;
+  padding: 7px 10px !important;
+  border-radius: 14px !important;
+  box-sizing: border-box !important;
+}
+
+#pitcherKContent .pk-star {
+  width: 28px !important;
+  height: 28px !important;
+  border-radius: 9px !important;
+}
+
+#pitcherKContent .pk-model-badge small {
+  font-size: .58rem !important;
+  line-height: 1 !important;
+  letter-spacing: .14em !important;
+}
+
+#pitcherKContent .pk-model-badge strong {
+  margin-top: 2px !important;
+  font-size: .82rem !important;
+  line-height: 1.05 !important;
+}
+
+#pitcherKContent .pk-model-badge em {
+  padding: 4px 8px !important;
+  font-size: .64rem !important;
+}
+
+/* Keep the three controls on ONE row on tablet/landscape widths.
+   Only stack at the same true mobile breakpoint. */
+@media (max-width: 1200px) and (min-width: 721px) {
+  #pitcherKContent .pk-control-card {
+    grid-template-columns:
+      minmax(0, 1.35fr)
+      minmax(0, 0.72fr)
+      minmax(0, 0.95fr) !important;
+  }
+
+  #pitcherKContent .pk-model-badge {
+    grid-column: auto !important;
+    max-width: none !important;
+  }
+}
+
+@media (max-width: 1100px) and (min-width: 721px) {
+  #pitcherKContent .pk-control-card {
+    grid-template-columns:
+      minmax(0, 1.35fr)
+      minmax(0, 0.72fr)
+      minmax(0, 0.95fr) !important;
+  }
+
+  #pitcherKContent .pk-model-badge {
+    grid-column: auto !important;
+  }
+}
+
+/* Compact Outlook: content-sized, no artificial empty vertical block. */
+#pitcherKContent .pk-summary {
+  position: static !important;
+  min-height: 0 !important;
+  height: auto !important;
+  margin-top: 14px !important;
+  padding: 20px 22px !important;
+  border-radius: 22px !important;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto !important;
+  align-items: start !important;
+  gap: 22px !important;
+}
+
+#pitcherKContent .pk-summary h2 {
+  margin: 6px 0 0 !important;
+  font-size: 1.25rem !important;
+  line-height: 1.15 !important;
+}
+
+#pitcherKContent .pk-summary p {
+  max-width: 650px !important;
+  margin: 8px 0 0 !important;
+  font-size: .86rem !important;
+  line-height: 1.4 !important;
+}
+
+#pitcherKContent .pk-summary-pills {
+  position: static !important;
+  top: auto !important;
+  right: auto !important;
+  max-width: 640px !important;
+  display: flex !important;
+  flex-wrap: wrap !important;
+  justify-content: flex-end !important;
+  align-content: start !important;
+  gap: 8px !important;
+}
+
+#pitcherKContent .pk-summary-pills span {
+  padding: 8px 12px !important;
+  font-size: .72rem !important;
+}
+
+/* Match the Hit Board's tighter vertical rhythm. */
+#pitcherKContent .pk-section-heading {
+  margin: 18px 2px 10px !important;
+}
+
+#pitcherKContent .pk-section-heading h2 {
+  font-size: 1.18rem !important;
+}
+
+#pitcherKContent .pk-card-list {
+  gap: 10px !important;
+}
+
+@media (max-width: 900px) {
+  #pitcherKContent .pk-summary {
+    grid-template-columns: 1fr !important;
+    gap: 14px !important;
+  }
+
+  #pitcherKContent .pk-summary-pills {
+    justify-content: flex-start !important;
+    max-width: none !important;
+  }
+}
+
+@media (max-width: 720px) {
+  #pitcherKContent .pk-control-card {
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+    padding: 11px !important;
+    border-radius: 16px !important;
+  }
+
+  #pitcherKContent .pk-model-badge {
+    grid-column: auto !important;
+    height: auto !important;
+    min-height: 42px !important;
+  }
+
+  #pitcherKContent .pk-mode-toggle,
+  #pitcherKContent .pk-game-select {
+    min-height: 42px !important;
+    height: 42px !important;
+  }
+
+  #pitcherKContent .pk-mode {
+    min-height: 36px !important;
+    padding: 0 8px !important;
+    font-size: .78rem !important;
+  }
+}
