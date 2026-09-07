@@ -153,3 +153,189 @@
 #mlbHitBoardContent .phase4b-power-table tr.p9a-exact-card .p9a-card-logos .p9a-logo-empty{
   display:none !important;
 }
+
+
+/* =========================================================
+   Phase 9A — Top 3 Consensus Summary
+   Matches the approved compact wireframe across HIT / TB / HR.
+   ========================================================= */
+#mlbHitBoardContent .daily-summary-card.consensus-outlook-card.p9a-consensus-summary{
+  display:block!important;
+  position:relative!important;
+  min-height:0!important;
+  height:auto!important;
+  margin:14px 0 0!important;
+  padding:14px 14px 14px!important;
+  border-radius:18px!important;
+  border:1px solid rgba(34,211,238,.70)!important;
+  background:
+    radial-gradient(circle at 9% 0%,rgba(34,211,238,.10),transparent 32%),
+    linear-gradient(120deg,rgba(9,39,60,.94),rgba(9,25,49,.94))!important;
+  overflow:hidden!important;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.025)!important;
+}
+#mlbHitBoardContent .p9a-consensus-legacy-hidden,
+#mlbHitBoardContent .p9a-consensus-extra-hidden{
+  display:none!important;
+}
+#mlbHitBoardContent .p9a-consensus-heading{
+  display:flex!important;
+  align-items:center!important;
+  justify-content:space-between!important;
+  gap:18px!important;
+  padding:0 4px 10px!important;
+}
+#mlbHitBoardContent .p9a-consensus-heading-copy{
+  display:flex!important;
+  align-items:center!important;
+  gap:12px!important;
+  min-width:0!important;
+}
+#mlbHitBoardContent .p9a-consensus-trophy{
+  width:44px!important;height:44px!important;min-width:44px!important;
+  display:grid!important;place-items:center!important;
+  border-radius:11px!important;
+  background:rgba(34,211,238,.10)!important;
+  font-size:1.35rem!important;
+}
+#mlbHitBoardContent .p9a-consensus-heading .eyebrow{
+  margin:0 0 3px!important;
+  color:#38bdf8!important;
+  font-size:.64rem!important;
+  font-weight:950!important;
+  letter-spacing:.16em!important;
+}
+#mlbHitBoardContent .p9a-consensus-heading h2{
+  margin:0!important;
+  color:#f8fafc!important;
+  font-size:1.12rem!important;
+  line-height:1.1!important;
+}
+#mlbHitBoardContent .p9a-consensus-heading p{
+  margin:4px 0 0!important;
+  color:#94a3b8!important;
+  font-size:.70rem!important;
+}
+#mlbHitBoardContent .p9a-consensus-count{
+  flex:0 0 auto!important;
+  padding:8px 13px!important;
+  border-radius:999px!important;
+  border:1px solid rgba(56,189,248,.36)!important;
+  background:rgba(7,24,45,.64)!important;
+  color:#7dd3fc!important;
+  font-size:.70rem!important;
+  font-weight:850!important;
+  white-space:nowrap!important;
+}
+#mlbHitBoardContent .p9a-consensus-summary .outlook-main{
+  display:block!important;
+  width:100%!important;
+  max-width:none!important;
+  margin:0!important;
+  padding:0!important;
+}
+#mlbHitBoardContent .p9a-consensus-summary .outlook-main>.eyebrow,
+#mlbHitBoardContent .p9a-consensus-summary .outlook-main>h2,
+#mlbHitBoardContent .p9a-consensus-summary .outlook-main>p{
+  display:none!important;
+}
+#mlbHitBoardContent .p9a-consensus-summary .consensus-play-list{
+  display:grid!important;
+  grid-template-columns:repeat(3,minmax(0,1fr))!important;
+  gap:10px!important;
+  width:100%!important;
+  max-width:none!important;
+  margin:0!important;
+}
+#mlbHitBoardContent .p9a-consensus-summary .consensus-play-row.p9a-consensus-card{
+  display:block!important;
+  width:auto!important;
+  min-width:0!important;
+  min-height:122px!important;
+  padding:12px 13px!important;
+  border-radius:14px!important;
+  border:1px solid rgba(56,189,248,.20)!important;
+  background:linear-gradient(145deg,rgba(5,18,34,.96),rgba(8,24,43,.90))!important;
+  box-shadow:none!important;
+  overflow:hidden!important;
+}
+#mlbHitBoardContent .p9a-consensus-summary .p9a-consensus-card:hover{
+  border-color:rgba(56,189,248,.48)!important;
+  background:linear-gradient(145deg,rgba(6,23,42,.98),rgba(9,29,51,.94))!important;
+}
+#mlbHitBoardContent .p9a-consensus-top{
+  display:grid!important;
+  grid-template-columns:34px auto minmax(0,1fr) auto!important;
+  align-items:center!important;
+  gap:8px!important;
+  min-height:38px!important;
+}
+#mlbHitBoardContent .p9a-consensus-rank{
+  width:32px!important;height:32px!important;
+  display:grid!important;place-items:center!important;
+  border-radius:999px!important;
+  background:linear-gradient(135deg,#38bdf8,#7657ff)!important;
+  color:#fff!important;font-size:.74rem!important;font-weight:950!important;
+}
+#mlbHitBoardContent .p9a-consensus-hand{
+  min-width:38px!important;height:31px!important;padding:0 7px!important;
+  display:grid!important;place-items:center!important;
+  border-radius:8px!important;
+  border:1px solid rgba(96,165,250,.38)!important;
+  background:linear-gradient(145deg,#183152,#111c38)!important;
+  color:#e7f2ff!important;font-size:.68rem!important;font-weight:900!important;
+}
+#mlbHitBoardContent .p9a-consensus-logos{
+  display:flex!important;align-items:center!important;gap:5px!important;min-width:0!important;
+}
+#mlbHitBoardContent .p9a-consensus-logos .p9a-logo{
+  width:34px!important;height:34px!important;border-radius:8px!important;
+}
+#mlbHitBoardContent .p9a-consensus-logos .p9a-logo img{
+  width:27px!important;height:27px!important;
+}
+#mlbHitBoardContent .p9a-consensus-prob{
+  text-align:right!important;min-width:70px!important;
+}
+#mlbHitBoardContent .p9a-consensus-prob strong{
+  display:block!important;color:#f8fafc!important;
+  font-size:1.48rem!important;line-height:1!important;font-weight:950!important;
+  letter-spacing:-.035em!important;font-variant-numeric:tabular-nums!important;
+}
+#mlbHitBoardContent .p9a-consensus-prob small{
+  display:block!important;margin-top:4px!important;
+  color:#7185a0!important;font-size:.48rem!important;font-weight:950!important;letter-spacing:.16em!important;
+}
+#mlbHitBoardContent .p9a-consensus-player{
+  margin-top:8px!important;
+  color:#f8fafc!important;font-size:.91rem!important;font-weight:900!important;
+  white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;
+}
+#mlbHitBoardContent .p9a-consensus-bottom{
+  display:flex!important;align-items:center!important;justify-content:space-between!important;
+  gap:8px!important;margin-top:5px!important;
+}
+#mlbHitBoardContent .p9a-consensus-matchup{
+  color:#8292a8!important;font-size:.66rem!important;font-weight:650!important;white-space:nowrap!important;
+}
+#mlbHitBoardContent .p9a-consensus-signal{
+  max-width:145px!important;min-height:29px!important;padding:0 10px!important;
+  display:inline-flex!important;align-items:center!important;justify-content:center!important;
+  border-radius:999px!important;border:1px solid rgba(56,189,248,.42)!important;
+  background:rgba(10,59,91,.30)!important;color:#c6e8ff!important;
+  font-size:.64rem!important;font-weight:850!important;
+  white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;
+}
+@media(max-width:1100px){
+  #mlbHitBoardContent .p9a-consensus-summary .consensus-play-list{
+    grid-template-columns:1fr!important;
+  }
+  #mlbHitBoardContent .p9a-consensus-summary .consensus-play-row.p9a-consensus-card{
+    min-height:96px!important;
+  }
+}
+@media(max-width:650px){
+  #mlbHitBoardContent .p9a-consensus-heading{align-items:flex-start!important}
+  #mlbHitBoardContent .p9a-consensus-count{display:none!important}
+  #mlbHitBoardContent .p9a-consensus-heading p{font-size:.64rem!important}
+}

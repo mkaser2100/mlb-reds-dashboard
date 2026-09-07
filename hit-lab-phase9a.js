@@ -1,9 +1,9 @@
 /* MLB Hit Lab — Phase 9A exact wireframe renderer
    Presentation-only enhancement over app-v4.js production data/rendering.
-   Build: phase9a-exact-wireframe-20260907i */
+   Build: phase9a-consensus-summary-20260908a */
 (() => {
   const ROOT_ID = 'mlbHitBoardContent';
-  const BUILD = 'phase9a-exact-wireframe-20260907i';
+  const BUILD = 'phase9a-consensus-summary-20260908a';
 
   const TEAM = {
     'Arizona Diamondbacks':['ARI',109], 'Atlanta Braves':['ATL',144], 'Baltimore Orioles':['BAL',110],
@@ -160,6 +160,97 @@
     }
   }
 
+
+  function p9aCardDataForPlayer(root, playerName) {
+    const cards = [...root.querySelectorAll('tr.p9a-exact-card')];
+    const card = cards.find(row => {
+      const title = txt(row.querySelector('.p9a-player-title'));
+      return title === playerName || title.startsWith(`${playerName} ·`);
+    });
+    if (!card) return null;
+    const logos = [...card.querySelectorAll('.p9a-card-logos .p9a-logo:not(.p9a-logo-empty)')];
+    const logoHtml = logos.map(el => el.outerHTML).join('');
+    return {
+      probability: txt(card.querySelector('.p9a-card-prob strong')),
+      matchup: txt(card.querySelector('.p9a-matchup')),
+      hand: txt(card.querySelector('.p9a-hand')),
+      signal: txt(card.querySelector('.p9a-signal')),
+      logoHtml
+    };
+  }
+
+  function normalizeConsensusSummary(root) {
+    const card = root.querySelector('.daily-summary-card.consensus-outlook-card');
+    if (!card) return;
+
+    const list = card.querySelector('.consensus-play-list');
+    if (!list) return;
+
+    const rows = [...list.querySelectorAll('.consensus-play-row')].slice(0, 3);
+    if (!rows.length) return;
+
+    card.classList.add('p9a-consensus-summary');
+
+    let header = card.querySelector('.p9a-consensus-heading');
+    if (!header) {
+      header = document.createElement('div');
+      header.className = 'p9a-consensus-heading';
+      header.innerHTML = `
+        <div class="p9a-consensus-heading-copy">
+          <span class="p9a-consensus-trophy" aria-hidden="true">🏆</span>
+          <div>
+            <div class="eyebrow">DAILY SUMMARY</div>
+            <h2>Top 3 Consensus Plays</h2>
+            <p>Highest agreement across available model signals.</p>
+          </div>
+        </div>
+        <span class="p9a-consensus-count">👥 3 consensus plays</span>
+      `;
+      card.insertBefore(header, card.firstChild);
+    }
+
+    // Hide the legacy summary header/metrics; the new header is the single source of truth.
+    card.querySelectorAll(':scope > .p9a-summary-header, :scope > .summary-metrics').forEach(el => {
+      if (!el.closest('.p9a-consensus-heading')) el.classList.add('p9a-consensus-legacy-hidden');
+    });
+
+    rows.forEach((row, i) => {
+      if (row.dataset.p9aConsensus === '1') return;
+
+      const copy = row.querySelector('.consensus-player-copy');
+      const strong = copy?.querySelector('strong');
+      const playerName = txt(strong) || txt(copy).split('·')[0].trim();
+      if (!playerName) return;
+
+      const board = p9aCardDataForPlayer(root, playerName);
+      const originalText = txt(copy);
+      const reasonCandidates = [...(copy?.querySelectorAll('small,span') || [])].map(txt).filter(Boolean);
+      const reason = board?.signal || reasonCandidates.find(v => v !== playerName && !/^V[23]\s*#/i.test(v)) || '';
+      const matchup = board?.matchup || '';
+      const hand = board?.hand || '';
+      const probability = board?.probability || '';
+
+      row.dataset.p9aConsensus = '1';
+      row.classList.add('p9a-consensus-card');
+      row.innerHTML = `
+        <div class="p9a-consensus-top">
+          <span class="p9a-consensus-rank">${i + 1}</span>
+          ${hand ? `<span class="p9a-consensus-hand">${esc(hand)}</span>` : ''}
+          <span class="p9a-consensus-logos">${board?.logoHtml || ''}</span>
+          <span class="p9a-consensus-prob">${probability ? `<strong>${esc(probability)}</strong><small>MODEL</small>` : ''}</span>
+        </div>
+        <div class="p9a-consensus-player">${esc(playerName)}</div>
+        <div class="p9a-consensus-bottom">
+          <span class="p9a-consensus-matchup">${esc(matchup)}</span>
+          ${reason ? `<span class="p9a-consensus-signal">${esc(reason)}</span>` : ''}
+        </div>
+      `;
+    });
+
+    // Never show more than the top three.
+    [...list.querySelectorAll('.consensus-play-row')].slice(3).forEach(row => row.classList.add('p9a-consensus-extra-hidden'));
+  }
+
   function updatePageCopy(root) {
     const t = target(root);
     const eyebrow = document.getElementById('pageEyebrow');
@@ -180,6 +271,13 @@
     });
     if (root.querySelector('.phase4b-status-badge')) issues.push('legacy Shadow/Live badge remains in player cards');
     if (root.querySelector('.p9a-exact-card .player-name')) issues.push('legacy pitcher/player markup remains');
+    const summaryCards = [...root.querySelectorAll('.p9a-consensus-card')];
+    if (root.querySelector('.consensus-play-list') && summaryCards.length !== Math.min(3, root.querySelectorAll('.consensus-play-row').length)) {
+      issues.push('consensus summary did not normalize top three cards');
+    }
+    summaryCards.forEach((card,i) => {
+      if (!txt(card.querySelector('.p9a-consensus-player'))) issues.push(`consensus ${i+1}: missing player`);
+    });
     root.dataset.p9aQa = issues.length ? 'fail' : 'pass';
     if (issues.length) console.warn('Phase 9A exact wireframe QA', issues);
     else if (cards.length) console.info(`Phase 9A exact wireframe QA: PASS (${cards.length} cards)`);
@@ -192,6 +290,7 @@
     compactTip(root);
     cleanBoardHeader(root);
     normalizeRows(root);
+    normalizeConsensusSummary(root);
     updatePageCopy(root);
     requestAnimationFrame(() => qa(root));
   }
