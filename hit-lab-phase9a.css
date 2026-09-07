@@ -984,3 +984,120 @@
     min-height: 68px !important;
   }
 }
+
+
+/* =========================================================
+   Phase 9A renderer refinement — deterministic final card layouts
+   ========================================================= */
+
+/* HIT: keep the proven seven-zone layout. */
+#mlbHitBoardContent .board-card[data-p9a-target="HIT"] .mlb-clickable-row {
+  display: grid !important;
+  grid-template-columns: 48px minmax(235px,1.35fr) minmax(145px,.72fr) minmax(125px,.62fr) minmax(95px,.48fr) minmax(92px,.44fr) minmax(145px,.70fr) !important;
+  grid-template-areas: "rank player team probability odds confidence why" !important;
+  align-items: center !important;
+  column-gap: 14px !important;
+}
+
+/* POWER: deliberately only Rank | Batter | Team | Probability | Signal.
+   Status + pitcher + game are removed by JS and cannot overlap. */
+#mlbHitBoardContent .board-card[data-p9a-target="TB"] .mlb-clickable-row,
+#mlbHitBoardContent .board-card[data-p9a-target="HR"] .mlb-clickable-row {
+  display: grid !important;
+  grid-template-columns: 48px minmax(260px,1.45fr) minmax(170px,.80fr) minmax(130px,.62fr) minmax(165px,.76fr) !important;
+  grid-template-areas: "rank player team probability why" !important;
+  align-items: center !important;
+  column-gap: 16px !important;
+  min-height: 88px !important;
+  padding: 13px 16px !important;
+}
+
+#mlbHitBoardContent .board-card[data-p9a-target="TB"] td[data-p9a-role="rank"],
+#mlbHitBoardContent .board-card[data-p9a-target="HR"] td[data-p9a-role="rank"] { grid-area: rank !important; }
+#mlbHitBoardContent .board-card[data-p9a-target="TB"] td[data-p9a-role="player"],
+#mlbHitBoardContent .board-card[data-p9a-target="HR"] td[data-p9a-role="player"] { grid-area: player !important; padding-top: 14px !important; }
+#mlbHitBoardContent .board-card[data-p9a-target="TB"] td[data-p9a-role="team"],
+#mlbHitBoardContent .board-card[data-p9a-target="HR"] td[data-p9a-role="team"] { grid-area: team !important; }
+#mlbHitBoardContent .board-card[data-p9a-target="TB"] td[data-p9a-role="probability"],
+#mlbHitBoardContent .board-card[data-p9a-target="HR"] td[data-p9a-role="probability"] { grid-area: probability !important; }
+#mlbHitBoardContent .board-card[data-p9a-target="TB"] td[data-p9a-role="why"],
+#mlbHitBoardContent .board-card[data-p9a-target="HR"] td[data-p9a-role="why"] {
+  grid-area: why !important;
+  justify-self: end !important;
+  max-width: 165px !important;
+  overflow: visible !important;
+}
+
+#mlbHitBoardContent .board-card[data-p9a-target="TB"] td[hidden],
+#mlbHitBoardContent .board-card[data-p9a-target="HR"] td[hidden] {
+  display: none !important;
+}
+
+/* No fake odds/status labels on power boards. */
+#mlbHitBoardContent .board-card[data-p9a-target="TB"] td[data-p9a-role="status"]::before,
+#mlbHitBoardContent .board-card[data-p9a-target="HR"] td[data-p9a-role="status"]::before,
+#mlbHitBoardContent .board-card[data-p9a-target="TB"] td[data-p9a-role="status"]::after,
+#mlbHitBoardContent .board-card[data-p9a-target="HR"] td[data-p9a-role="status"]::after {
+  content: none !important;
+  display: none !important;
+}
+
+/* Keep one signal pill plus +N; never let it spill into the probability zone. */
+#mlbHitBoardContent .board-card[data-p9a-target="TB"] td[data-p9a-role="why"] .primary-why-wrap,
+#mlbHitBoardContent .board-card[data-p9a-target="HR"] td[data-p9a-role="why"] .primary-why-wrap {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  gap: 7px !important;
+  max-width: 165px !important;
+}
+#mlbHitBoardContent .board-card[data-p9a-target="TB"] td[data-p9a-role="why"] .primary-why-pill,
+#mlbHitBoardContent .board-card[data-p9a-target="HR"] td[data-p9a-role="why"] .primary-why-pill {
+  max-width: 128px !important;
+  overflow: hidden !important;
+  white-space: nowrap !important;
+  text-overflow: ellipsis !important;
+}
+
+/* True compact tip strip. */
+#mlbHitBoardContent .p9a-tip-strip {
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  min-height: 44px !important;
+  max-height: 52px !important;
+  padding: 8px 12px !important;
+  margin: 10px 0 12px !important;
+  border-radius: 11px !important;
+  overflow: hidden !important;
+  background: rgba(10,22,39,.38) !important;
+  border: 1px solid rgba(56,189,248,.10) !important;
+  font-size: .72rem !important;
+  line-height: 1.2 !important;
+}
+#mlbHitBoardContent .p9a-tip-strip strong { color: #dbeafe !important; }
+#mlbHitBoardContent .p9a-tip-strip span { color: #7f8da3 !important; }
+
+/* Summary: accepted state, only nudge metric pills upward. */
+#mlbHitBoardContent .daily-summary-card.consensus-outlook-card {
+  padding-bottom: 14px !important;
+}
+
+@media (max-width: 1180px) {
+  #mlbHitBoardContent .board-card[data-p9a-target="TB"] .mlb-clickable-row,
+  #mlbHitBoardContent .board-card[data-p9a-target="HR"] .mlb-clickable-row {
+    grid-template-columns: 44px minmax(220px,1.3fr) minmax(130px,.68fr) minmax(115px,.58fr) minmax(145px,.72fr) !important;
+  }
+}
+
+@media (max-width: 760px) {
+  #mlbHitBoardContent .board-card[data-p9a-target="TB"] .mlb-clickable-row,
+  #mlbHitBoardContent .board-card[data-p9a-target="HR"] .mlb-clickable-row {
+    grid-template-columns: 40px minmax(0,1fr) auto !important;
+    grid-template-areas:
+      "rank player probability"
+      "rank team probability"
+      "rank why probability" !important;
+    row-gap: 5px !important;
+  }
+}

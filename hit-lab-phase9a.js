@@ -1,17 +1,13 @@
-/* MLB Hit Lab — Phase 9A refinement helpers
-   Adds semantic data attributes to existing rendered leaderboard rows.
-   No data queries and no model logic changes. */
+/* MLB Hit Lab — Phase 9A renderer refinement
+   Normalizes the existing rendered leaderboard DOM into stable semantic cards.
+   No data fetching or model logic changes. */
 (() => {
-  const BUILD = "phase9a-refinement-v2-20260907e";
-  const rootId = "mlbHitBoardContent";
+  const BUILD = "phase9a-renderer-refinement-20260907f";
+  const ROOT_ID = "mlbHitBoardContent";
 
-  const normalize = (s) =>
-    String(s || "")
-      .trim()
-      .toLowerCase()
-      .replace(/\+/g, "plus")
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-|-$/g, "");
+  const normalize = (s) => String(s || "")
+    .trim().toLowerCase().replace(/\+/g, "plus")
+    .replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 
   function targetFromTitle(title) {
     const t = String(title || "").toLowerCase();
@@ -20,84 +16,138 @@
     return "HIT";
   }
 
+  function assignRole(cell, role) {
+    if (!cell || !role) return;
+    cell.dataset.p9aRole = role;
+  }
+
+  function mapRolesFromHeaders(board, row) {
+    const headers = [...board.querySelectorAll("thead th")].map((th) => normalize(th.textContent));
+    const cells = [...row.children];
+    cells.forEach((cell, index) => {
+      const col = headers[index] || `col-${index + 1}`;
+      cell.dataset.p9aCol = col;
+      if (index === 0 || col === "rank" || col === "#") assignRole(cell, "rank");
+      else if (col.includes("player")) assignRole(cell, "player");
+      else if (col === "team") assignRole(cell, "team");
+      else if (col.includes("probability")) assignRole(cell, "probability");
+      else if (col.includes("best-odds") || col === "odds") assignRole(cell, "odds");
+      else if (col.includes("confidence")) assignRole(cell, "confidence");
+      else if (col === "why" || col.includes("signal")) assignRole(cell, "why");
+      else if (col.includes("opponent-sp") || col.includes("opposing-pitcher") || col === "pitcher") assignRole(cell, "pitcher");
+      else if (col === "game") assignRole(cell, "game");
+      else if (col.includes("status") || col.includes("deployment")) assignRole(cell, "status");
+    });
+  }
+
+  function enforceKnownTargetSchema(board, row, target) {
+    const cells = [...row.children];
+    if (target === "HIT") {
+      // Production Hit schema: Rank | Player | Team | Probability | Best Odds | Confidence | Why | Opp SP | Game
+      ["rank","player","team","probability","odds","confidence","why","pitcher","game"]
+        .forEach((role, i) => assignRole(cells[i], role));
+      return;
+    }
+
+    // Production power schema confirmed from app-v4.js:
+    // Rank | Player | Team | Probability | Status | Why | Opponent SP | Game
+    ["rank","player","team","probability","status","why","pitcher","game"]
+      .forEach((role, i) => assignRole(cells[i], role));
+  }
+
+  function normalizePowerCard(row) {
+    // The page-level Active Model already communicates SHADOW. Remove per-row repetition.
+    row.querySelectorAll('[data-p9a-role="status"]').forEach((cell) => {
+      cell.hidden = true;
+      cell.setAttribute("aria-hidden", "true");
+    });
+
+    // Opposing pitcher belongs in the matchup/detail surface, not the scan-first row.
+    row.querySelectorAll('[data-p9a-role="pitcher"], [data-p9a-role="game"]').forEach((cell) => {
+      cell.hidden = true;
+      cell.setAttribute("aria-hidden", "true");
+    });
+  }
+
   function enhanceBoard(board) {
     const rows = [...board.querySelectorAll("tr.mlb-clickable-row")];
     if (!rows.length) return;
 
     const target = targetFromTitle(board.querySelector("h2")?.textContent);
     board.dataset.p9aTarget = target;
-    rows.forEach((row) => { row.dataset.p9aTarget = target; });
 
-    const headers = [...board.querySelectorAll("thead th")].map((th) => normalize(th.textContent));
     rows.forEach((row) => {
-      [...row.children].forEach((cell, index) => {
-        const col = headers[index] || `col-${index + 1}`;
-        cell.dataset.p9aCol = col;
-      });
-    });
-
-    // Give known semantic fields stable names across Hit / TB / HR target tables.
-    rows.forEach((row) => {
-      [...row.children].forEach((cell) => {
-        const c = cell.dataset.p9aCol || "";
-        if (c === "" || c === "col-1") cell.dataset.p9aRole = "rank";
-        if (c.includes("player")) cell.dataset.p9aRole = "player";
-        if (c === "team") cell.dataset.p9aRole = "team";
-        if (c.includes("probability")) cell.dataset.p9aRole = "probability";
-        if (c.includes("best-odds") || c === "odds") cell.dataset.p9aRole = "odds";
-        if (c.includes("confidence")) cell.dataset.p9aRole = "confidence";
-        if (c === "why" || c.includes("signal")) cell.dataset.p9aRole = "why";
-        if (c.includes("opponent-sp") || c.includes("pitcher")) cell.dataset.p9aRole = "pitcher";
-        if (c === "game") cell.dataset.p9aRole = "game";
-        if (c.includes("status") || c.includes("deployment")) cell.dataset.p9aRole = "status";
-      });
+      row.dataset.p9aTarget = target;
+      mapRolesFromHeaders(board, row);
+      enforceKnownTargetSchema(board, row, target);
+      if (target !== "HIT") normalizePowerCard(row);
     });
   }
 
+  function compactTip(root) {
+    [...root.querySelectorAll(".performance-note")].forEach((note) => {
+      const text = String(note.textContent || "").trim();
+      if (!/^tip:/i.test(text)) return;
+      note.classList.add("p9a-tip-strip");
+      note.innerHTML = '<strong>Tip:</strong><span>Select a player for matchup detail, recent form and model signals.</span>';
+    });
+  }
 
+  function overlap(a, b) {
+    if (!a || !b) return false;
+    const r1 = a.getBoundingClientRect();
+    const r2 = b.getBoundingClientRect();
+    if (!r1.width || !r1.height || !r2.width || !r2.height) return false;
+    return !(r1.right <= r2.left || r2.right <= r1.left || r1.bottom <= r2.top || r2.bottom <= r1.top);
+  }
 
-  function refineSemanticRoles(board) {
-    const target = board.dataset.p9aTarget || targetFromTitle(board.querySelector("h2")?.textContent);
-    const rows = [...board.querySelectorAll("tr.mlb-clickable-row")];
-    rows.forEach((row) => {
-      const cells = [...row.children];
-      cells.forEach((cell) => {
-        const col = String(cell.dataset.p9aCol || "");
-        const text = String(cell.textContent || "").trim().toLowerCase();
+  function runVisualQa(root) {
+    const issues = [];
+    root.querySelectorAll('.board-card[data-p9a-target] .mlb-clickable-row').forEach((row, idx) => {
+      const target = row.dataset.p9aTarget;
+      const visibleStatus = [...row.querySelectorAll('[data-p9a-role="status"]')].some((el) => !el.hidden);
+      const visiblePitcher = [...row.querySelectorAll('[data-p9a-role="pitcher"]')].some((el) => !el.hidden);
+      if (target !== "HIT" && visibleStatus) issues.push(`${target} row ${idx+1}: row-level status visible`);
+      if (target !== "HIT" && visiblePitcher) issues.push(`${target} row ${idx+1}: pitcher visible`);
 
-        // Power boards expose model deployment status instead of market odds.
-        if ((target === "HR" || target === "TB") && (col.includes("status") || text === "shadow" || text === "live")) {
-          cell.dataset.p9aRole = "status";
-        }
-
-        if (col.includes("opponent-sp") || col.includes("opposing-pitcher") || col === "pitcher") {
-          cell.dataset.p9aRole = "pitcher";
-        }
-      });
+      const prob = row.querySelector('[data-p9a-role="probability"]');
+      const why = row.querySelector('[data-p9a-role="why"]');
+      const player = row.querySelector('[data-p9a-role="player"]');
+      if (overlap(prob, why)) issues.push(`${target} row ${idx+1}: probability overlaps why`);
+      if (overlap(player, prob)) issues.push(`${target} row ${idx+1}: player overlaps probability`);
     });
 
-    const meta = board.querySelector(".board-meta");
-    if (meta) meta.dataset.p9aMeta = "true";
+    root.dataset.p9aQa = issues.length ? "fail" : "pass";
+    if (issues.length) console.warn("Phase 9A visual QA", issues);
+    else console.info("Phase 9A visual QA: pass");
+    return issues;
   }
 
   function enhance() {
-    const root = document.getElementById(rootId);
+    const root = document.getElementById(ROOT_ID);
     if (!root) return;
-    root.querySelectorAll(".board-card").forEach((board) => { enhanceBoard(board); refineSemanticRoles(board); });
+    root.querySelectorAll(".board-card").forEach(enhanceBoard);
+    compactTip(root);
+    requestAnimationFrame(() => runVisualQa(root));
   }
 
   function init() {
     enhance();
-    const root = document.getElementById(rootId);
+    const root = document.getElementById(ROOT_ID);
     if (!root) return;
-    const observer = new MutationObserver(() => requestAnimationFrame(enhance));
+    let queued = false;
+    const observer = new MutationObserver(() => {
+      if (queued) return;
+      queued = true;
+      requestAnimationFrame(() => {
+        queued = false;
+        enhance();
+      });
+    });
     observer.observe(root, { childList: true, subtree: true });
     console.info(`MLB Hit Lab ${BUILD} loaded`);
   }
 
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", init, { once: true });
-  } else {
-    init();
-  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init, { once: true });
+  else init();
 })();
