@@ -10,6 +10,18 @@ on:
         required: false
         default: false
         type: boolean
+      prediction_stage:
+        required: false
+        default: preliminary
+        type: string
+      confirmed_only:
+        required: false
+        default: false
+        type: boolean
+      skip_started:
+        required: false
+        default: false
+        type: boolean
   workflow_dispatch:
     inputs:
       game_date:
@@ -21,12 +33,30 @@ on:
         required: false
         default: false
         type: boolean
+      prediction_stage:
+        description: "preliminary or final"
+        required: false
+        default: preliminary
+        type: choice
+        options:
+          - preliminary
+          - final
+      confirmed_only:
+        description: "Only score rows backed by confirmed lineups"
+        required: false
+        default: false
+        type: boolean
+      skip_started:
+        description: "Skip games already underway instead of failing"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
 
 concurrency:
-  group: score-mlb-pitcher-k-${{ inputs.game_date || 'today' }}
+  group: score-mlb-pitcher-k-${{ inputs.game_date || 'today' }}-${{ inputs.prediction_stage || 'preliminary' }}
   cancel-in-progress: false
 
 jobs:
@@ -55,16 +85,23 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ARGS=()
+          ARGS=(--prediction-stage "${{ inputs.prediction_stage || 'preliminary' }}")
           if [[ -n "${{ inputs.game_date }}" ]]; then
             ARGS+=(--date "${{ inputs.game_date }}")
           fi
           if [[ "${{ inputs.allow_after_start }}" == "true" ]]; then
             ARGS+=(--allow-after-start)
           fi
+          if [[ "${{ inputs.confirmed_only }}" == "true" ]]; then
+            ARGS+=(--confirmed-only)
+          fi
+          if [[ "${{ inputs.skip_started }}" == "true" ]]; then
+            ARGS+=(--skip-started)
+          fi
           python scripts/score_pitcher_k.py "${ARGS[@]}"
 
-      - name: Validate shadow pipeline health
+      - name: Validate preliminary shadow pipeline health
+        if: ${{ (inputs.prediction_stage || 'preliminary') == 'preliminary' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -80,5 +117,6 @@ jobs:
       - name: Job summary
         if: always()
         run: |
-          echo "## Pitcher K Shadow Scoring" >> "$GITHUB_STEP_SUMMARY"
-          echo "Scores the current pitcher-K candidate and validates coverage, pregame timing, and quality-state counts." >> "$GITHUB_STEP_SUMMARY"
+          echo "## Pitcher K Scoring" >> "$GITHUB_STEP_SUMMARY"
+          echo "Stage: ${{ inputs.prediction_stage || 'preliminary' }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Preliminary runs keep the existing shadow-health validation. Final runs are confirmed-lineup refreshes." >> "$GITHUB_STEP_SUMMARY"
