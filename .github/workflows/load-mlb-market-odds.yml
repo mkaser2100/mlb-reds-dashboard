@@ -62,10 +62,40 @@ jobs:
           echo "Skip Started Games: $SKIP_STARTED_GAMES"
 
       - name: Load MLB Hit Prop Market Odds
+        id: hit_odds
+        continue-on-error: true
         run: python scripts/load_hit_prop_market_odds.py
 
       - name: Load MLB Pitcher Strikeout Market Odds
+        id: pitcher_k_odds
+        continue-on-error: true
         run: python scripts/load_pitcher_k_market_odds.py
+
+      - name: Validate market odds loaders
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          hit_outcome="${{ steps.hit_odds.outcome }}"
+          pitcher_k_outcome="${{ steps.pitcher_k_odds.outcome }}"
+
+          echo "Hit odds loader outcome: ${hit_outcome}"
+          echo "Pitcher K odds loader outcome: ${pitcher_k_outcome}"
+
+          {
+            echo "## MLB Market Odds Loader Status"
+            echo ""
+            echo "| Loader | Outcome |"
+            echo "|---|---|"
+            echo "| Batter Hits | ${hit_outcome} |"
+            echo "| Pitcher Strikeouts | ${pitcher_k_outcome} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [[ "${hit_outcome}" != "success" || "${pitcher_k_outcome}" != "success" ]]; then
+            echo "One or more market odds loaders failed."
+            exit 1
+          fi
 
       - name: Upload loader log
         if: always()
