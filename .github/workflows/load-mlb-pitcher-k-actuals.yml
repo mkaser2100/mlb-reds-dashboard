@@ -1,0 +1,63 @@
+name: Load MLB Pitcher K Actuals
+
+on:
+  workflow_call:
+    inputs:
+      target_date:
+        required: false
+        type: string
+      min_coverage_pct:
+        required: false
+        default: "90"
+        type: string
+  workflow_dispatch:
+    inputs:
+      target_date:
+        description: "Prediction/game date YYYY-MM-DD; blank = yesterday ET"
+        required: false
+        type: string
+      min_coverage_pct:
+        description: "Minimum pitcher game-log actuals coverage percentage"
+        required: false
+        default: "90"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: load-mlb-pitcher-k-actuals-${{ inputs.target_date || 'yesterday' }}
+  cancel-in-progress: false
+
+jobs:
+  actuals:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Load pitcher K actuals
+        shell: bash
+        run: |
+          set -euo pipefail
+          ARGS=(--min-coverage-pct "${{ inputs.min_coverage_pct || '90' }}")
+          if [[ -n "${{ inputs.target_date }}" ]]; then
+            ARGS+=(--date "${{ inputs.target_date }}")
+          fi
+          python scripts/load_pitcher_k_actuals.py "${ARGS[@]}"
+
+      - name: Job summary
+        if: always()
+        run: |
+          echo "## Pitcher K Actuals + Evaluation" >> "$GITHUB_STEP_SUMMARY"
+          echo "Loads K, pitches, outs and available BF, then updates prospective shadow evaluation." >> "$GITHUB_STEP_SUMMARY"

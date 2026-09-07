@@ -46,6 +46,16 @@ jobs:
       min_log_coverage_pct: "85"
     secrets: inherit
 
+  pitcher_k_actuals:
+    # Phase 4B: closes yesterday's shadow prediction -> actual loop.
+    # Depend on Statcast as well so BF can be populated when available.
+    needs: [phase1, statcast]
+    uses: ./.github/workflows/load-mlb-pitcher-k-actuals.yml
+    with:
+      target_date: ${{ inputs.actuals_target_date || '' }}
+      min_coverage_pct: "90"
+    secrets: inherit
+
   features:
     needs: statcast
     uses: ./.github/workflows/refresh-mlb-v3-features.yml
@@ -54,13 +64,19 @@ jobs:
     secrets: inherit
 
   pitcher_k_features:
-    # Pitcher K Phase 1A consumes the refreshed current-date MLB/Statcast
-    # feature infrastructure. It is intentionally part of the master DAG
-    # and does not have its own automatic schedule.
     needs: features
     uses: ./.github/workflows/refresh-mlb-pitcher-k-features.yml
     with:
       game_date: ${{ inputs.prediction_date || '' }}
+    secrets: inherit
+
+  pitcher_k_shadow:
+    # Phase 4 prospective shadow scoring: automatic runs must be pregame.
+    needs: pitcher_k_features
+    uses: ./.github/workflows/score-mlb-pitcher-k.yml
+    with:
+      game_date: ${{ inputs.prediction_date || '' }}
+      allow_after_start: false
     secrets: inherit
 
   v3_model:
@@ -71,9 +87,6 @@ jobs:
     secrets: inherit
 
   power_models:
-    # Explicit downstream dependency on the shared V3 feature refresh.
-    # This makes HR + 2+ TB part of the parent daily pipeline instead of
-    # relying only on workflow_run / cron timing in the standalone workflow.
     needs: features
     uses: ./.github/workflows/mlb-power-model-daily.yml
     with:
