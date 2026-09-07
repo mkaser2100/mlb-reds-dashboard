@@ -1,3 +1,4 @@
+\
 name: Load MLB Pitcher K Actuals
 
 on:
@@ -56,8 +57,17 @@ jobs:
           fi
           python scripts/load_pitcher_k_actuals.py "${ARGS[@]}"
 
+      - name: Build Phase 4C performance report
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/report_pitcher_k_performance.py | tee pitcher_k_phase4c_report.txt
+          cat pitcher_k_phase4c_report.txt >> "$GITHUB_STEP_SUMMARY"
+
       - name: Job summary
         if: always()
         run: |
+          echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "## Pitcher K Actuals + Evaluation" >> "$GITHUB_STEP_SUMMARY"
           echo "Loads K, pitches, outs and available BF, then updates prospective shadow evaluation." >> "$GITHUB_STEP_SUMMARY"
