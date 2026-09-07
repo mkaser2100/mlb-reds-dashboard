@@ -1,0 +1,55 @@
+name: Pitcher K Phase 2 Research
+
+on:
+  workflow_dispatch:
+    inputs:
+      experiment_name:
+        description: "Optional experiment name"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pitcher-k-phase2-research
+  cancel-in-progress: false
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install modeling dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "numpy>=2.0,<3" "pandas>=2.2,<3" "scipy>=1.13,<2" "scikit-learn>=1.5,<2" "statsmodels>=0.14,<1"
+
+      - name: Run Phase 2 model research
+        shell: bash
+        run: |
+          set -euo pipefail
+          ARGS=()
+          if [[ -n "${{ inputs.experiment_name }}" ]]; then
+            ARGS+=(--experiment-name "${{ inputs.experiment_name }}")
+          fi
+          python scripts/train_pitcher_k_phase2.py "${ARGS[@]}"
+
+      - name: Job summary
+        if: always()
+        run: |
+          echo "## Pitcher K Phase 2" >> "$GITHUB_STEP_SUMMARY"
+          echo "Runs expanding-window out-of-fold research for historical baseline, Negative Binomial GLM, and two-stage BF × K-rate challenger." >> "$GITHUB_STEP_SUMMARY"
+          echo "Results are persisted to Supabase Phase 2 experiment tables." >> "$GITHUB_STEP_SUMMARY"
