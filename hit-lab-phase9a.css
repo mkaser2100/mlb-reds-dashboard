@@ -138,3 +138,11 @@
   #mlbHitBoardContent .p9a-summary-metrics{justify-content:flex-start!important}
   #mlbHitBoardContent .phase5b-unified-control-row{grid-template-columns:1fr!important;grid-template-areas:"outcome" "scope" "model"!important}
 }
+
+
+/* Phase 9A logo-centering hotfix — TB/HR only */
+#mlbHitBoardContent .phase4b-power-table tr.p9a-exact-card .p9a-card-logos{
+  justify-self:center !important;
+  justify-content:center !important;
+  width:100% !important;
+}
