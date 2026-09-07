@@ -1,0 +1,91 @@
+name: Refresh MLB Pitcher K Features
+
+on:
+  workflow_call:
+    inputs:
+      game_date:
+        required: false
+        type: string
+  workflow_dispatch:
+    inputs:
+      game_date:
+        description: "Pitcher K feature date in YYYY-MM-DD. Blank defaults to today ET."
+        required: false
+        type: string
+      backfill:
+        description: "Run historical backfill instead of daily refresh."
+        required: false
+        default: false
+        type: boolean
+      start_date:
+        description: "Backfill start date YYYY-MM-DD."
+        required: false
+        type: string
+      end_date:
+        description: "Backfill end date YYYY-MM-DD."
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: refresh-mlb-pitcher-k-features
+  cancel-in-progress: false
+
+jobs:
+  refresh-pitcher-k-features:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      PYTHONUNBUFFERED: "1"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Refresh pitcher K features
+        shell: bash
+        env:
+          INPUT_GAME_DATE: ${{ inputs.game_date }}
+          INPUT_BACKFILL: ${{ inputs.backfill }}
+          INPUT_START_DATE: ${{ inputs.start_date }}
+          INPUT_END_DATE: ${{ inputs.end_date }}
+        run: |
+          set -euo pipefail
+
+          if [[ "${INPUT_BACKFILL:-false}" == "true" ]]; then
+            if [[ -z "${INPUT_START_DATE:-}" || -z "${INPUT_END_DATE:-}" ]]; then
+              echo "ERROR: backfill=true requires both start_date and end_date." >&2
+              exit 1
+            fi
+
+            python scripts/refresh_pitcher_k_features.py               --backfill               --start-date "$INPUT_START_DATE"               --end-date "$INPUT_END_DATE"
+          elif [[ -n "${INPUT_GAME_DATE:-}" ]]; then
+            python scripts/refresh_pitcher_k_features.py --date "$INPUT_GAME_DATE"
+          else
+            python scripts/refresh_pitcher_k_features.py
+          fi
+
+      - name: Write job summary
+        if: always()
+        run: |
+          {
+            echo "## MLB Pitcher K Feature Refresh"
+            echo
+            echo "- Trigger: `${{ github.event_name }}`"
+            echo "- Game date: `${{ inputs.game_date || 'today ET' }}`"
+            echo "- Backfill: `${{ inputs.backfill || false }}`"
+            echo "- Feature table: `mlb_ml_pitcher_k_features_daily`"
+            echo "- Orchestration: `master pipeline dependency`"
+            echo "- Concurrency guard: `enabled`"
+            echo "- Post-refresh validation: `enabled`"
+          } >> "$GITHUB_STEP_SUMMARY"
