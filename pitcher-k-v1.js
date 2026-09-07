@@ -1,6 +1,6 @@
 /* MLB Hit Lab — Pitcher K Board Phase 9 */
 (() => {
-  const BUILD = "pitcher-k-phase9-20260907";
+  const BUILD = "pitcher-k-phase9-nav-fix-20260907a";
   const CACHE_TABLE = "mlb_pitcher_k_board_public_cache";
 
   const TEAM_ABBR = {
@@ -545,6 +545,18 @@
     };
   }
 
+  function bindNavigation() {
+    const navButton = $("pitcherKNav");
+    if (!navButton || navButton.dataset.pkBound === "true") return;
+
+    navButton.dataset.pkBound = "true";
+    navButton.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      showView("pitcherK");
+    });
+  }
+
   function bindRefresh() {
     $("refreshButton")?.addEventListener("click", () => {
       if ($("pitcherKView")?.classList.contains("active-view")) loadData(true);
@@ -558,6 +570,7 @@
   function init() {
     injectShell();
     installViewOverride();
+    bindNavigation();
     bindRefresh();
     console.info(`MLB Hit Lab ${BUILD} loaded`);
   }
