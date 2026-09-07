@@ -115,7 +115,7 @@ def run_daily(game_date: str) -> Dict[str, Any]:
         FEATURE_TABLE,
         {
             "select": (
-                "game_date,game_pk,pitcher_id,pitcher_name,lineup_status,"
+                "game_date,game_pk,pitcher_id,pitcher_name,lineup_source,lineup_confirmed,"
                 "feature_version,actual_strikeouts,actual_batters_faced"
             ),
             "game_date": f"eq.{game_date}",
@@ -141,7 +141,7 @@ def run_daily(game_date: str) -> Dict[str, Any]:
             f"Duplicate pitcher-game rows detected after refresh: {duplicate_count}"
         )
 
-    confirmed = sum(1 for r in rows if str(r.get("lineup_status") or "").lower() == "confirmed")
+    confirmed = sum(1 for r in rows if bool(r.get("lineup_confirmed")))
     with_actual_k = sum(1 for r in rows if r.get("actual_strikeouts") is not None)
     with_bf = sum(1 for r in rows if r.get("actual_batters_faced") is not None)
 
