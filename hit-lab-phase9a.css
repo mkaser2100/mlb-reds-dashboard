@@ -339,3 +339,11 @@
   #mlbHitBoardContent .p9a-consensus-count{display:none!important}
   #mlbHitBoardContent .p9a-consensus-heading p{font-size:.64rem!important}
 }
+
+
+/* Phase 9A single-team-logo alignment — Hit / TB / HR */
+#mlbHitBoardContent tr.p9a-exact-card .p9a-card-logos{
+  justify-self:center !important;
+  justify-content:center !important;
+  width:100% !important;
+}

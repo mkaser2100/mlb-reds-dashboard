@@ -1,9 +1,9 @@
 /* MLB Hit Lab — Phase 9A exact wireframe renderer
    Presentation-only enhancement over app-v4.js production data/rendering.
-   Build: phase9a-consensus-summary-20260908a */
+   Build: phase9a-hit-single-team-logo-20260908b */
 (() => {
   const ROOT_ID = 'mlbHitBoardContent';
-  const BUILD = 'phase9a-consensus-summary-20260908a';
+  const BUILD = 'phase9a-hit-single-team-logo-20260908b';
 
   const TEAM = {
     'Arizona Diamondbacks':['ARI',109], 'Atlanta Braves':['ATL',144], 'Baltimore Orioles':['BAL',110],
@@ -91,7 +91,7 @@
     row.innerHTML = `
       <td class="p9a-card-rank"><span class="p9a-rank-badge">${esc(rank)}</span></td>
       <td class="p9a-card-hand">${hand ? `<span class="p9a-hand">${esc(hand)}</span>` : ''}</td>
-      <td class="p9a-card-logos">${logo(teamName,'team')}${logo(opponentName,'opponent')}</td>
+      <td class="p9a-card-logos">${logo(teamName,'team')}</td>
       <td class="p9a-card-player">
         <div class="p9a-player-title">${esc(name)}${name ? ' · ' : ''}${esc(t.label)}</div>
         <div class="p9a-matchup">${esc(matchup)}</div>
