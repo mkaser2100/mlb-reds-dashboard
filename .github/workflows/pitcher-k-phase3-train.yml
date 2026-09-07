@@ -1,0 +1,65 @@
+name: Pitcher K Phase 3 Train & Validate
+
+on:
+  workflow_dispatch:
+    inputs:
+      score_date:
+        description: "Date to score after training (YYYY-MM-DD; blank = today ET)"
+        required: false
+        type: string
+      allow_after_start:
+        description: "Allow recovery scoring if today's games already started"
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pitcher-k-phase3-train
+  cancel-in-progress: false
+
+jobs:
+  train_and_validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install modeling dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "numpy>=2.0,<3" "pandas>=2.2,<3" "scipy>=1.13,<2" "scikit-learn>=1.5,<2" "statsmodels>=0.14,<1"
+
+      - name: Train and register final Phase 3 candidate
+        run: python scripts/train_pitcher_k_phase3.py
+
+      - name: Score validation date
+        shell: bash
+        run: |
+          set -euo pipefail
+          ARGS=()
+          if [[ -n "${{ inputs.score_date }}" ]]; then
+            ARGS+=(--date "${{ inputs.score_date }}")
+          fi
+          if [[ "${{ inputs.allow_after_start }}" == "true" ]]; then
+            ARGS+=(--allow-after-start)
+          fi
+          python scripts/score_pitcher_k.py "${ARGS[@]}"
+
+      - name: Job summary
+        if: always()
+        run: |
+          echo "## Pitcher K Phase 3" >> "$GITHUB_STEP_SUMMARY"
+          echo "Trains the full-data Negative Binomial candidate, persists a portable JSON artifact, registers the model, and validates the scorer against a real game date." >> "$GITHUB_STEP_SUMMARY"
