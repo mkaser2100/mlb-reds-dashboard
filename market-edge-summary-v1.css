@@ -1,0 +1,229 @@
+/* =========================================================
+   MLB Hit Lab — Market Edge Daily Summary alignment tweak
+   Goal: match the compact, left-aligned Top 3 Consensus style
+   without touching market-edge-v2.css.
+   Build: market-edge-summary-v1-20260908
+   ========================================================= */
+
+/* Keep the summary compact and visually aligned with the approved
+   Top 3 Consensus card treatment. */
+#marketEdgeContent .mev2-summary {
+  padding: 14px !important;
+}
+
+#marketEdgeContent .mev2-summary-header {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 18px !important;
+  margin-bottom: 10px !important;
+}
+
+#marketEdgeContent .mev2-summary-title-wrap {
+  display: flex !important;
+  align-items: center !important;
+  gap: 12px !important;
+  min-width: 0 !important;
+}
+
+#marketEdgeContent .mev2-summary-trophy {
+  width: 44px !important;
+  height: 44px !important;
+  min-width: 44px !important;
+  border-radius: 11px !important;
+  font-size: 1.35rem !important;
+}
+
+#marketEdgeContent .mev2-summary-header .mev2-kicker {
+  margin: 0 0 3px !important;
+  color: #38bdf8 !important;
+  font-size: .64rem !important;
+  font-weight: 950 !important;
+  letter-spacing: .16em !important;
+}
+
+#marketEdgeContent .mev2-summary-header h2 {
+  margin: 0 !important;
+  font-size: 1.12rem !important;
+  line-height: 1.1 !important;
+}
+
+#marketEdgeContent .mev2-summary-header p {
+  margin: 4px 0 0 !important;
+  font-size: .70rem !important;
+}
+
+#marketEdgeContent .mev2-count {
+  flex: 0 0 auto !important;
+  padding: 8px 13px !important;
+  font-size: .70rem !important;
+  white-space: nowrap !important;
+}
+
+/* Three cards remain side-by-side on desktop. */
+#marketEdgeContent .mev2-summary-grid {
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: 10px !important;
+  width: 100% !important;
+}
+
+/* Root cause of the centered look:
+   force each summary card to stretch its children full-width instead
+   of allowing the flex-column content to visually collect in the middle. */
+#marketEdgeContent .mev2-summary-card {
+  display: block !important;
+  width: auto !important;
+  min-width: 0 !important;
+  min-height: 122px !important;
+  padding: 12px 13px !important;
+  text-align: left !important;
+  overflow: hidden !important;
+}
+
+/* Top row: identity anchored left, probability anchored right. */
+#marketEdgeContent .mev2-card-topline {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto !important;
+  align-items: center !important;
+  gap: 8px !important;
+  width: 100% !important;
+  min-height: 38px !important;
+}
+
+#marketEdgeContent .mev2-card-identity {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  gap: 8px !important;
+  min-width: 0 !important;
+}
+
+#marketEdgeContent .mev2-summary-rank {
+  width: 32px !important;
+  height: 32px !important;
+  flex: 0 0 32px !important;
+  font-size: .74rem !important;
+}
+
+#marketEdgeContent .mev2-hand-badge {
+  min-width: 38px !important;
+  height: 31px !important;
+  padding: 0 7px !important;
+  border-radius: 8px !important;
+  font-size: .68rem !important;
+}
+
+#marketEdgeContent .mev2-team-logo-wrap {
+  width: 34px !important;
+  height: 34px !important;
+  flex: 0 0 34px !important;
+  border-radius: 8px !important;
+}
+
+#marketEdgeContent .mev2-team-logo {
+  width: 27px !important;
+  height: 27px !important;
+}
+
+#marketEdgeContent .mev2-summary-metric {
+  min-width: 70px !important;
+  text-align: right !important;
+  justify-self: end !important;
+}
+
+#marketEdgeContent .mev2-summary-metric strong {
+  display: block !important;
+  font-size: 1.48rem !important;
+  line-height: 1 !important;
+  font-weight: 950 !important;
+  letter-spacing: -.035em !important;
+  font-variant-numeric: tabular-nums !important;
+}
+
+#marketEdgeContent .mev2-summary-metric span {
+  display: block !important;
+  margin-top: 4px !important;
+  font-size: .48rem !important;
+  font-weight: 950 !important;
+  letter-spacing: .16em !important;
+}
+
+/* Player and team now start at the left edge like the approved screenshot. */
+#marketEdgeContent .mev2-summary-copy {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: flex-start !important;
+  width: 100% !important;
+  margin-top: 8px !important;
+  text-align: left !important;
+}
+
+#marketEdgeContent .mev2-summary-copy strong {
+  width: 100% !important;
+  color: #f8fafc !important;
+  font-size: .91rem !important;
+  font-weight: 900 !important;
+  line-height: 1.15 !important;
+  text-align: left !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+#marketEdgeContent .mev2-summary-copy span {
+  width: 100% !important;
+  margin-top: 5px !important;
+  color: #8292a8 !important;
+  font-size: .66rem !important;
+  font-weight: 650 !important;
+  text-align: left !important;
+}
+
+/* Bottom row: prop/matchup left, model badge right. */
+#marketEdgeContent .mev2-card-footer {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 8px !important;
+  width: 100% !important;
+  margin-top: 5px !important;
+  text-align: left !important;
+}
+
+#marketEdgeContent .mev2-card-prop {
+  color: #8292a8 !important;
+  font-size: .66rem !important;
+  font-weight: 650 !important;
+  white-space: nowrap !important;
+}
+
+#marketEdgeContent .mev2-signal-badge {
+  max-width: 145px !important;
+  min-height: 29px !important;
+  padding: 0 10px !important;
+  justify-content: center !important;
+  font-size: .64rem !important;
+  font-weight: 850 !important;
+}
+
+/* Preserve the existing stacked behavior on narrower screens. */
+@media (max-width: 1180px) {
+  #marketEdgeContent .mev2-summary-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  #marketEdgeContent .mev2-summary-card {
+    min-height: 96px !important;
+  }
+}
+
+@media (max-width: 720px) {
+  #marketEdgeContent .mev2-summary-header {
+    align-items: flex-start !important;
+  }
+
+  #marketEdgeContent .mev2-count {
+    display: none !important;
+  }
+}
