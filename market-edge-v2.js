@@ -1,13 +1,13 @@
 /* =========================================================
    MLB Hit Lab — Market Edge V2
-   Build: phase9c-market-edge-live-20260908a
+   Build: phase9c-market-edge-live-20260908b
    Owns only #marketEdgeView.
    Live scope reuses one shared card renderer across all props.
    ========================================================= */
 (() => {
   "use strict";
 
-  const BUILD = "phase9c-market-edge-live-20260908a";
+  const BUILD = "phase9c-market-edge-live-20260908b";
   const CACHE_TABLE = "mlb_market_edge_board_public_cache";
   const BATTER_LIVE_TABLE = "mlb_market_edge_batter_live_status";
   const PITCHER_K_TABLE = "mlb_pitcher_k_board_public_cache";
@@ -189,15 +189,48 @@
   }
 
   function installHeaderGuard() {
-    const observer = new MutationObserver(() => setPageCopy());
+    const enforce = () => {
+      if (!el("marketEdgeView")?.classList.contains("active-view")) return;
+
+      const expectedSubtitle = state.scope === "live"
+        ? "Track today's model opportunities as MLB games unfold."
+        : "Compare model probabilities with sportsbook markets across MLB player props.";
+
+      const expected = {
+        pageEyebrow: "ALL MLB · PROP INTELLIGENCE",
+        pageTitle: "Market Edge",
+        pageSubtitle: expectedSubtitle
+      };
+
+      const mismatch = Object.entries(expected).some(([id, value]) => {
+        const node = el(id);
+        return node && node.textContent !== value;
+      });
+
+      if (mismatch) setPageCopy();
+    };
+
+    const observer = new MutationObserver(enforce);
+
     ["pageEyebrow", "pageTitle", "pageSubtitle"].forEach(id => {
       const node = el(id);
-      if (node) observer.observe(node, { childList: true, characterData: true, subtree: true });
+      if (node) observer.observe(node, {
+        childList: true,
+        characterData: true,
+        subtree: true
+      });
     });
+
     const marketView = el("marketEdgeView");
-    if (marketView) observer.observe(marketView, { attributes: true, attributeFilter: ["class"] });
-    window.addEventListener("pageshow", setPageCopy);
-    requestAnimationFrame(setPageCopy);
+    if (marketView) {
+      observer.observe(marketView, {
+        attributes: true,
+        attributeFilter: ["class"]
+      });
+    }
+
+    window.addEventListener("pageshow", enforce);
+    requestAnimationFrame(enforce);
   }
 
   function liveKey(gamePk, playerId) {
