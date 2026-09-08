@@ -1,0 +1,210 @@
+/* =========================================================
+   MLB Hit Lab — iPad / Safari initial scale fix
+   Build: ipad-layout-fix-20260908a
+
+   Goals:
+   1. Prevent iOS/iPadOS Safari automatic text inflation.
+   2. Give 11–13" iPads a compact desktop layout instead of a
+      too-large near-desktop breakpoint.
+   3. Leave desktop/laptop presentation unchanged.
+   ========================================================= */
+
+/* Safari can auto-enlarge text in landscape unless explicitly controlled. */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+/*
+  Tablet landscape.
+  iPad Pro/Air landscape widths commonly land around 1024–1366 CSS px.
+  Keep the vertical navigation, but use tighter desktop proportions.
+*/
+@media
+  (hover: none)
+  and (pointer: coarse)
+  and (min-width: 1000px)
+  and (max-width: 1366px) {
+
+  .app-layout {
+    grid-template-columns: 220px minmax(0, 1fr) !important;
+  }
+
+  .sidebar {
+    padding: 18px !important;
+    gap: 18px !important;
+  }
+
+  .brand-mark {
+    width: 40px !important;
+    height: 40px !important;
+    border-radius: 14px !important;
+    font-size: 1.22rem !important;
+  }
+
+  .sidebar-toggle {
+    width: 36px !important;
+    height: 36px !important;
+  }
+
+  .nav-item {
+    padding: 10px 11px !important;
+    border-radius: 14px !important;
+  }
+
+  .sidebar-card {
+    padding: 14px !important;
+    border-radius: 18px !important;
+  }
+
+  .sidebar-card p {
+    font-size: .82rem !important;
+    line-height: 1.45 !important;
+  }
+
+  .main {
+    padding: 20px !important;
+  }
+
+  .topbar {
+    gap: 16px !important;
+    margin-bottom: 18px !important;
+  }
+
+  .eyebrow {
+    font-size: .68rem !important;
+  }
+
+  h1 {
+    font-size: clamp(2.25rem, 4vw, 3.35rem) !important;
+    line-height: .96 !important;
+  }
+
+  .page-subtitle {
+    max-width: 700px !important;
+    margin-top: 8px !important;
+    font-size: .92rem !important;
+    line-height: 1.42 !important;
+  }
+
+  .live-pill,
+  .refresh-button,
+  .sort-pill {
+    padding: 8px 11px !important;
+    font-size: .78rem !important;
+  }
+
+  /* Market Edge controls: preserve 3-column desktop behavior but compact it. */
+  #marketEdgeContent .mev2-shell {
+    gap: 18px !important;
+  }
+
+  #marketEdgeContent .mev2-control-card {
+    padding: 11px !important;
+    border-radius: 17px !important;
+  }
+
+  #marketEdgeContent .mev2-control-grid {
+    grid-template-columns:
+      minmax(390px, 1.45fr)
+      minmax(245px, .8fr)
+      minmax(210px, .65fr) !important;
+    gap: 9px !important;
+  }
+
+  #marketEdgeContent .mev2-segments {
+    min-height: 40px !important;
+  }
+
+  #marketEdgeContent .mev2-segment {
+    font-size: .74rem !important;
+  }
+
+  #marketEdgeContent .mev2-summary {
+    padding: 12px !important;
+  }
+
+  #marketEdgeContent .mev2-summary-header h2 {
+    font-size: 1.04rem !important;
+  }
+
+  #marketEdgeContent .mev2-summary-header p {
+    font-size: .67rem !important;
+  }
+
+  #marketEdgeContent .mev2-summary-card {
+    min-height: 112px !important;
+    padding: 10px 11px !important;
+  }
+
+  /* K Board: same compact tablet treatment. */
+  .pk-control-card {
+    padding: 10px !important;
+    gap: 10px !important;
+  }
+
+  .pk-mode-toggle,
+  .pk-game-select,
+  .pk-model-badge {
+    min-height: 52px !important;
+  }
+
+  .pk-mode {
+    min-height: 44px !important;
+    font-size: .78rem !important;
+  }
+}
+
+/* Collapsed sidebar is the preferred tablet state and should stay narrow. */
+@media
+  (hover: none)
+  and (pointer: coarse)
+  and (min-width: 1000px)
+  and (max-width: 1366px) {
+
+  body.sidebar-collapsed .app-layout {
+    grid-template-columns: 72px minmax(0, 1fr) !important;
+  }
+
+  body.sidebar-collapsed .sidebar {
+    padding: 16px 9px !important;
+    gap: 14px !important;
+  }
+
+  body.sidebar-collapsed .brand-mark {
+    width: 38px !important;
+    height: 38px !important;
+    border-radius: 13px !important;
+  }
+
+  body.sidebar-collapsed .sidebar-toggle {
+    width: 38px !important;
+    height: 38px !important;
+  }
+
+  body.sidebar-collapsed .nav-item {
+    padding: 11px 0 !important;
+    border-radius: 15px !important;
+  }
+}
+
+/*
+  Portrait / narrower tablet: allow the existing responsive stack to take over,
+  but continue suppressing Safari text inflation.
+*/
+@media
+  (hover: none)
+  and (pointer: coarse)
+  and (max-width: 999px) {
+
+  html,
+  body {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+}
