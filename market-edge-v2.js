@@ -1,12 +1,12 @@
 /* =========================================================
    MLB Hit Lab — Market Edge V2
-   Build: phase9b-market-edge-v2-20260908h
+   Build: phase9b-market-edge-v2-20260908i
    Owns only #marketEdgeView.
    ========================================================= */
 (() => {
   "use strict";
 
-  const BUILD = "phase9b-market-edge-v2-20260908h";
+  const BUILD = "phase9b-market-edge-v2-20260908i";
   const CACHE_TABLE = "mlb_market_edge_board_public_cache";
   const STORAGE_KEY = "marketEdgeV2State";
 
@@ -172,6 +172,44 @@
       el("pageSubtitle").textContent =
         "Compare model probabilities with sportsbook markets across MLB player props.";
     }
+  }
+
+  function installHeaderGuard() {
+    const expected = {
+      pageEyebrow: "ALL MLB · PROP INTELLIGENCE",
+      pageTitle: "Market Edge",
+      pageSubtitle: "Compare model probabilities with sportsbook markets across MLB player props."
+    };
+
+    const enforce = () => {
+      if (!el("marketEdgeView")?.classList.contains("active-view")) return;
+      const mismatch = Object.entries(expected).some(([id, value]) => el(id)?.textContent !== value);
+      if (mismatch) setPageCopy();
+    };
+
+    const observer = new MutationObserver(enforce);
+
+    Object.keys(expected).forEach(id => {
+      const node = el(id);
+      if (node) {
+        observer.observe(node, {
+          childList: true,
+          characterData: true,
+          subtree: true
+        });
+      }
+    });
+
+    const marketView = el("marketEdgeView");
+    if (marketView) {
+      observer.observe(marketView, {
+        attributes: true,
+        attributeFilter: ["class"]
+      });
+    }
+
+    window.addEventListener("pageshow", enforce);
+    requestAnimationFrame(enforce);
   }
 
   async function fetchLatestRows() {
@@ -700,6 +738,7 @@
 
   loadSavedState();
   interceptMarketView();
+  installHeaderGuard();
   activateMarketView();
   console.info(`Market Edge V2 loaded: ${BUILD}`);
 })();
