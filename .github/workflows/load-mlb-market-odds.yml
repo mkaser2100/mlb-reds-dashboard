@@ -13,8 +13,7 @@ on:
         default: "all"
         type: string
   schedule:
-    # Multiple refreshes improve player coverage as books post markets during the day.
-    # 10:00 AM EDT.
+    # Daily pregame refresh. The loader skips games that already started.
     - cron: "0 14 * * *"
 
 jobs:
@@ -27,10 +26,8 @@ jobs:
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       THE_ODDS_API_KEY: ${{ secrets.THE_ODDS_API_KEY }}
 
-      # Loader configuration
       SPORT_KEY: baseball_mlb
-      # Batter hit market configuration
-      MARKET_KEY: batter_hits
+      ODDS_MARKET_KEYS: batter_hits,batter_total_bases,batter_home_runs
       ODDS_REGIONS: us
       BOOKMAKERS: ${{ inputs.bookmakers || 'all' }}
       ODDS_TARGET_DATE: ${{ inputs.target_date || '' }}
@@ -54,15 +51,15 @@ jobs:
       - name: Verify configuration
         run: |
           echo "Sport: $SPORT_KEY"
-          echo "Market: $MARKET_KEY"
+          echo "Batter markets: $ODDS_MARKET_KEYS"
           echo "Regions: $ODDS_REGIONS"
           echo "Books: $BOOKMAKERS"
           echo "Target Date: ${ODDS_TARGET_DATE:-today Eastern}"
           echo "Max Events: $MAX_EVENTS_PER_RUN"
           echo "Skip Started Games: $SKIP_STARTED_GAMES"
 
-      - name: Load MLB Hit Prop Market Odds
-        id: hit_odds
+      - name: Load MLB Batter Prop Market Odds
+        id: batter_prop_odds
         continue-on-error: true
         run: python scripts/load_hit_prop_market_odds.py
 
@@ -77,10 +74,10 @@ jobs:
         run: |
           set -euo pipefail
 
-          hit_outcome="${{ steps.hit_odds.outcome }}"
+          batter_outcome="${{ steps.batter_prop_odds.outcome }}"
           pitcher_k_outcome="${{ steps.pitcher_k_odds.outcome }}"
 
-          echo "Hit odds loader outcome: ${hit_outcome}"
+          echo "Batter prop odds loader outcome: ${batter_outcome}"
           echo "Pitcher K odds loader outcome: ${pitcher_k_outcome}"
 
           {
@@ -88,11 +85,11 @@ jobs:
             echo ""
             echo "| Loader | Outcome |"
             echo "|---|---|"
-            echo "| Batter Hits | ${hit_outcome} |"
+            echo "| Batter Hits / 2+ TB / Home Run | ${batter_outcome} |"
             echo "| Pitcher Strikeouts | ${pitcher_k_outcome} |"
           } >> "$GITHUB_STEP_SUMMARY"
 
-          if [[ "${hit_outcome}" != "success" || "${pitcher_k_outcome}" != "success" ]]; then
+          if [[ "${batter_outcome}" != "success" || "${pitcher_k_outcome}" != "success" ]]; then
             echo "One or more market odds loaders failed."
             exit 1
           fi
