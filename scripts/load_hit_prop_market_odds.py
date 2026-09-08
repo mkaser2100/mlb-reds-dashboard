@@ -441,49 +441,19 @@ def main() -> int:
         print_usage(usage)
         return 0
 
-    # Replace the current snapshot for the exact provider events fetched.
-    # We intentionally delete by event_id + provider + date, without a market filter,
-    # because legacy rows may use aliases such as player_hits instead of batter_hits.
-    # Keeping those alias rows is what caused the canonical identity unique-key collisions.
-    event_ids = sorted({
-        str(row.get("provider_event_id") or "")
-        for row in all_rows
-        if row.get("provider_event_id")
-    })
-    if event_ids:
-        deleted = (
-            client.table("mlb_player_hit_prop_market_odds")
-            .delete()
-            .eq("odds_provider", cfg.provider)
-            .eq("game_date", target_date)
-            .in_("provider_event_id", event_ids)
-            .execute()
-        )
-        print(f"Prior rows replaced for fetched events: {len(deleted.data or [])}")
-
-    # Defensive de-duplication by the same canonical identity enforced by
-    # ux_mlb_player_hit_prop_market_odds_identity. This protects against a provider
-    # returning duplicate outcomes with different load_key spellings/casing.
-    identity_rows: dict[tuple[str, str, str, str, str, str, float, str], dict[str, Any]] = {}
-    for row in all_rows:
-        identity = (
-            str(row.get("odds_provider") or "").lower(),
-            str(row.get("book_name") or "").lower(),
-            str(row.get("provider_event_id") or ""),
-            str(row.get("game_date") or ""),
-            str(row.get("player_name_raw") or "").strip().lower(),
-            str(row.get("market_key") or "").lower(),
-            float(row.get("line") or 0),
-            str(row.get("outcome_name") or "").lower(),
-        )
-        identity_rows[identity] = row
-    all_rows = list(identity_rows.values())
-
-    rows_upserted = 0
-    for batch in chunked(all_rows):
-        result = client.table("mlb_player_hit_prop_market_odds").insert(batch).execute()
-        rows_upserted += len(result.data or [])
-    print(f"Rows inserted: {rows_upserted}")
+    # Write the provider snapshot atomically in Postgres. The RPC owns the exact
+    # database normalization/identity rules, so raw-name variants cannot collide
+    # with ux_mlb_player_hit_prop_market_odds_identity.
+    snapshot = client.rpc(
+        "replace_mlb_batter_prop_market_odds_snapshot",
+        {
+            "p_odds_provider": cfg.provider,
+            "p_game_date": target_date,
+            "p_rows": all_rows,
+        },
+    ).execute()
+    print("Atomic batter odds snapshot result:")
+    print(json.dumps(snapshot.data, indent=2, default=str))
 
     try:
         paired = (
