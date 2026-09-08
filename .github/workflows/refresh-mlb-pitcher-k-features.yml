@@ -42,6 +42,8 @@ jobs:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       PYTHONUNBUFFERED: "1"
+      PITCHER_K_FEATURE_MAX_ATTEMPTS: "8"
+      PITCHER_K_FEATURE_RETRY_SECONDS: "30"
 
     steps:
       - name: Check out repository
@@ -68,7 +70,10 @@ jobs:
               exit 1
             fi
 
-            python scripts/refresh_pitcher_k_features.py               --backfill               --start-date "$INPUT_START_DATE"               --end-date "$INPUT_END_DATE"
+            python scripts/refresh_pitcher_k_features.py \
+              --backfill \
+              --start-date "$INPUT_START_DATE" \
+              --end-date "$INPUT_END_DATE"
           elif [[ -n "${INPUT_GAME_DATE:-}" ]]; then
             python scripts/refresh_pitcher_k_features.py --date "$INPUT_GAME_DATE"
           else
@@ -77,15 +82,20 @@ jobs:
 
       - name: Write job summary
         if: always()
+        shell: bash
+        env:
+          SUMMARY_TRIGGER: ${{ github.event_name }}
+          SUMMARY_GAME_DATE: ${{ inputs.game_date || 'today ET' }}
+          SUMMARY_BACKFILL: ${{ inputs.backfill || false }}
         run: |
           {
-            echo "## MLB Pitcher K Feature Refresh"
+            echo '## MLB Pitcher K Feature Refresh'
             echo
-            echo "- Trigger: `${{ github.event_name }}`"
-            echo "- Game date: `${{ inputs.game_date || 'today ET' }}`"
-            echo "- Backfill: `${{ inputs.backfill || false }}`"
-            echo "- Feature table: `mlb_ml_pitcher_k_features_daily`"
-            echo "- Orchestration: `master pipeline dependency`"
-            echo "- Concurrency guard: `enabled`"
-            echo "- Post-refresh validation: `enabled`"
+            printf '%s\n' "- Trigger: ${SUMMARY_TRIGGER}"
+            printf '%s\n' "- Game date: ${SUMMARY_GAME_DATE}"
+            printf '%s\n' "- Backfill: ${SUMMARY_BACKFILL}"
+            echo '- Feature table: mlb_ml_pitcher_k_features_daily'
+            echo '- Orchestration: master pipeline dependency'
+            echo '- Starter-context retry guard: enabled (8 attempts / 30 seconds)'
+            echo '- Post-refresh validation: enabled'
           } >> "$GITHUB_STEP_SUMMARY"
