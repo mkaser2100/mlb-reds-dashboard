@@ -10,15 +10,15 @@
 (() => {
   "use strict";
 
-  const BUILD = "phase9b-market-edge-v2-20260908d";
+  const BUILD = "phase9b-market-edge-v2-20260908e";
   const CACHE_TABLE = "mlb_market_edge_board_public_cache";
   const STORAGE_KEY = "marketEdgeV2State";
 
   const PROP_META = {
     all:       { label: "All Props" },
     hit:       { label: "1+ Hit", type: "hit_1plus" },
-    tb:        { label: "2+ TB", type: "tb_2plus" },
-    hr:        { label: "Home Run", type: "hr_1plus" },
+    tb:        { label: "2+ TB", type: "total_bases_2plus" },
+    hr:        { label: "Home Run", type: "home_run_1plus" },
     pitcher_k: { label: "Pitcher Ks", type: "pitcher_strikeouts" }
   };
 
@@ -47,6 +47,7 @@
     })[ch]);
   }
   function num(v) {
+    if (v == null || (typeof v === "string" && !v.trim())) return null;
     const n = Number(v);
     return Number.isFinite(n) ? n : null;
   }
@@ -75,6 +76,41 @@
     }).format(d);
   }
 
+  function bookLabel(value) {
+    const raw = String(value ?? "").trim();
+    if (!raw) return "—";
+    const key = raw.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const labels = {
+      draftkings: "DraftKings", fanduel: "FanDuel", betmgm: "BetMGM",
+      betonlineag: "BetOnline", betonline: "BetOnline", bovada: "Bovada",
+      caesars: "Caesars", betrivers: "BetRivers", pointsbetus: "PointsBet",
+      espnbet: "ESPN BET", fanatics: "Fanatics"
+    };
+    return labels[key] || raw.replace(/\b\w/g, c => c.toUpperCase());
+  }
+
+  function teamAbbr(value) {
+    const raw = String(value ?? "").trim();
+    if (!raw) return "";
+    const map = {
+      "Arizona Diamondbacks":"ARI","Athletics":"ATH","Atlanta Braves":"ATL","Baltimore Orioles":"BAL",
+      "Boston Red Sox":"BOS","Chicago Cubs":"CHC","Chicago White Sox":"CWS","Cincinnati Reds":"CIN",
+      "Cleveland Guardians":"CLE","Colorado Rockies":"COL","Detroit Tigers":"DET","Houston Astros":"HOU",
+      "Kansas City Royals":"KC","Los Angeles Angels":"LAA","Los Angeles Dodgers":"LAD","Miami Marlins":"MIA",
+      "Milwaukee Brewers":"MIL","Minnesota Twins":"MIN","New York Mets":"NYM","New York Yankees":"NYY",
+      "Philadelphia Phillies":"PHI","Pittsburgh Pirates":"PIT","San Diego Padres":"SD","San Francisco Giants":"SF",
+      "Seattle Mariners":"SEA","St. Louis Cardinals":"STL","Tampa Bay Rays":"TB","Texas Rangers":"TEX",
+      "Toronto Blue Jays":"TOR","Washington Nationals":"WSH"
+    };
+    return map[raw] || raw;
+  }
+
+  function matchupLabel(row) {
+    const team = teamAbbr(row.team_name);
+    const opp = teamAbbr(row.opponent_team_name);
+    return team && opp ? `${team} vs ${opp}` : (row.game_label || "");
+  }
+
   function loadSavedState() {
     try {
       const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
@@ -99,11 +135,11 @@
   function setPageCopy() {
     const marketView = el("marketEdgeView");
     if (!marketView?.classList.contains("active-view")) return;
-    if (el("pageEyebrow")) el("pageEyebrow").textContent = "Model vs Market · Cross-Prop Opportunity Board";
+    if (el("pageEyebrow")) el("pageEyebrow").textContent = "ALL MLB · PROP INTELLIGENCE";
     if (el("pageTitle")) el("pageTitle").textContent = "Market Edge";
     if (el("pageSubtitle")) {
       el("pageSubtitle").textContent =
-        "Rank MLB player props by model-vs-market edge or by raw model probability.";
+        "Compare model probabilities with sportsbook markets across MLB player props.";
     }
   }
 
@@ -164,7 +200,9 @@
   }
 
   function edgeEligible(row) {
-    return num(row.edge_probability) != null && num(row.market_probability_no_vig) != null;
+    const edge = num(row.edge_probability);
+    const market = num(row.market_probability_no_vig);
+    return row.market_available === true && market != null && edge != null && edge > 0;
   }
 
   function filteredRows() {
@@ -305,7 +343,7 @@
         <div class="mev2-summary-copy">
           <strong>${esc(row.player_name || "—")}</strong>
           <span>${esc(row.prop_label || row.prop_type || "—")}</span>
-          <small>${esc(row.game_label || "")}</small>
+          <small>${esc(matchupLabel(row))}${state.ranking === "edge" ? ` · Model ${pct(row.model_probability)} · Market ${pct(row.market_probability_no_vig)}` : ""}</small>
         </div>
         <div class="mev2-summary-metric">
           <strong>${state.ranking === "edge" ? pct(row.edge_probability, true) : pct(row.model_probability)}</strong>
@@ -315,17 +353,24 @@
   }
 
   function marketCell(row) {
-    if (num(row.market_probability_no_vig) == null) {
+    if (row.market_available !== true || num(row.market_probability_no_vig) == null) {
       return `<span class="mev2-na" title="No paired Over/Under market is available for a true no-vig probability.">—</span>`;
     }
     return pct(row.market_probability_no_vig);
   }
 
   function edgeCell(row) {
+    if (row.market_available !== true || num(row.market_probability_no_vig) == null) {
+      return `<span class="mev2-na">—</span>`;
+    }
     const n = num(row.edge_probability);
     if (n == null) return `<span class="mev2-na">—</span>`;
     const cls = n >= 0.10 ? "large" : n >= 0.05 ? "medium" : n >= 0.03 ? "small" : "positive";
     return `<span class="mev2-edge ${cls}">${pct(n, true)}</span>`;
+  }
+
+  function bestOddsCell(row) {
+    return num(row.best_american_odds) == null ? "—" : odds(row.best_american_odds);
   }
 
   function tableHtml(rows) {
@@ -360,7 +405,7 @@
               ${rows.length ? rows.map((row, i) => tableRow(row, i)).join("") :
                 `<tr><td colspan="9"><div class="mev2-empty">
                   ${state.ranking === "edge"
-                    ? "No paired no-vig markets are available for this selection."
+                    ? "No positive model-vs-market edges with paired no-vig pricing are available for this selection."
                     : "No model rows are available for this selection."}
                 </div></td></tr>`}
             </tbody>
@@ -377,15 +422,15 @@
         <td>
           <div class="mev2-player">
             <strong>${esc(row.player_name || "—")}</strong>
-            <span>${esc(row.team_name || "—")} vs ${esc(row.opponent_team_name || "—")}${hand}</span>
+            <span>${esc(matchupLabel(row) || "—")}${hand}</span>
           </div>
         </td>
         <td><span class="mev2-prop-pill">${esc(row.prop_label || row.prop_type || "—")}</span></td>
         <td><strong>${pct(row.model_probability)}</strong></td>
         <td>${marketCell(row)}</td>
         <td>${edgeCell(row)}</td>
-        <td><strong>${odds(row.best_american_odds)}</strong></td>
-        <td>${esc(row.best_book || "—")}</td>
+        <td><strong>${bestOddsCell(row)}</strong></td>
+        <td>${esc(bookLabel(row.best_book))}</td>
         <td><button class="mev2-chevron" type="button" data-mev2-row="${esc(row.row_key)}" aria-label="Open details">›</button></td>
       </tr>`;
   }
@@ -522,13 +567,13 @@
     body.innerHTML = `
       <div class="mev2-detail-kicker">${esc(row.prop_label || row.prop_type || "PROP")}</div>
       <h2>${esc(row.player_name || "—")}</h2>
-      <p class="mev2-detail-matchup">${esc(row.game_label || "")}</p>
+      <p class="mev2-detail-matchup">${esc(matchupLabel(row))}</p>
       <div class="mev2-detail-grid">
         <div><span>Model Probability</span><strong>${pct(row.model_probability)}</strong></div>
         <div><span>Market No-Vig</span><strong>${marketCell(row)}</strong></div>
         <div><span>Edge</span><strong>${edgeCell(row)}</strong></div>
-        <div><span>Best Odds</span><strong>${odds(row.best_american_odds)}</strong></div>
-        <div><span>Sportsbook</span><strong>${esc(row.best_book || "—")}</strong></div>
+        <div><span>Best Odds</span><strong>${bestOddsCell(row)}</strong></div>
+        <div><span>Sportsbook</span><strong>${esc(bookLabel(row.best_book))}</strong></div>
         <div><span>Line</span><strong>${row.market_line == null ? "—" : esc(row.market_line)} ${esc(row.side || "")}</strong></div>
       </div>
       <div class="mev2-detail-status">
@@ -596,6 +641,19 @@
       }
     });
     if (el("marketEdgeView")) observer.observe(el("marketEdgeView"), { attributes: true, attributeFilter: ["class"] });
+
+    const headerObserver = new MutationObserver(() => {
+      if (!el("marketEdgeView")?.classList.contains("active-view")) return;
+      const expected = {
+        pageEyebrow: "ALL MLB · PROP INTELLIGENCE",
+        pageTitle: "Market Edge",
+        pageSubtitle: "Compare model probabilities with sportsbook markets across MLB player props."
+      };
+      if (Object.entries(expected).some(([id, text]) => el(id)?.textContent !== text)) setPageCopy();
+    });
+    ["pageEyebrow","pageTitle","pageSubtitle"].forEach(id => {
+      if (el(id)) headerObserver.observe(el(id), { childList: true, characterData: true, subtree: true });
+    });
   }
 
   window.runMarketEdgeV2SelfTest = function runMarketEdgeV2SelfTest() {
@@ -613,6 +671,7 @@
       edgeMathValid: state.rows
         .filter(r => num(r.edge_probability) != null && num(r.market_probability_no_vig) != null && num(r.model_probability) != null)
         .every(r => Math.abs(num(r.edge_probability) - (num(r.model_probability) - num(r.market_probability_no_vig))) < 0.0011),
+      edgeRowsActionable: state.ranking !== "edge" || rows.every(r => edgeEligible(r)),
       probabilitiesValid: state.rows.every(r =>
         (num(r.model_probability) == null || (num(r.model_probability) >= 0 && num(r.model_probability) <= 1)) &&
         (num(r.market_probability_no_vig) == null || (num(r.market_probability_no_vig) >= 0 && num(r.market_probability_no_vig) <= 1))
