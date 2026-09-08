@@ -1,29 +1,28 @@
 #!/usr/bin/env python3
-"""
-Load MLB batter Hits Over 0.5 market odds into Supabase.
+"""Load paired MLB batter prop odds for Phase 9B Market Edge.
 
-Provider: The Odds API v4
-  1) GET /v4/sports/baseball_mlb/events
-  2) GET /v4/sports/baseball_mlb/events/{event_id}/odds?markets=batter_hits\n     (no bookmaker filter by default, so every available book in the configured regions is accepted)
+Provider: The Odds API v4 event-odds endpoint.
+
+Default markets:
+  - batter_hits, canonical line 0.5
+  - batter_total_bases, canonical line 1.5
+  - batter_home_runs, canonical line 0.5
+
+Both Over and Under are stored for every available book so Supabase can compute
+book-specific no-vig probabilities. Started games are skipped by default.
 
 Required env vars:
   SUPABASE_URL
   SUPABASE_SERVICE_ROLE_KEY
   THE_ODDS_API_KEY
 
-Default behavior:
-  - Pull only today's MLB events using America/New_York date.
-  - Skip games that have already started.
-  - Pull every sportsbook returned for the configured regions.
-  - Pull only batter_hits.
-  - Store only Over 0.5 rows.
-
 Optional env vars:
-  ODDS_BOOKMAKERS=all (default) or a comma-separated allowlist such as draftkings,bet365
-  ODDS_REGIONS=us,uk
+  ODDS_BOOKMAKERS=all or comma-separated bookmaker keys
+  ODDS_REGIONS=us
   ODDS_PROVIDER=the_odds_api
   ODDS_SPORT_KEY=baseball_mlb or SPORT_KEY=baseball_mlb
-  ODDS_MARKET_KEY=batter_hits or MARKET_KEY=batter_hits
+  ODDS_MARKET_KEYS=batter_hits,batter_total_bases,batter_home_runs
+  ODDS_MARKET_KEY / MARKET_KEY remain supported as a single-market override
   ODDS_TARGET_DATE=YYYY-MM-DD
   ODDS_SKIP_STARTED=true or SKIP_STARTED_GAMES=true
   ODDS_MAX_EVENTS=20 or MAX_EVENTS_PER_RUN=20
@@ -49,6 +48,17 @@ from supabase import create_client
 
 API_BASE = "https://api.the-odds-api.com/v4"
 EASTERN_TZ = ZoneInfo("America/New_York")
+DEFAULT_MARKETS = ("batter_hits", "batter_total_bases", "batter_home_runs")
+TARGET_LINES = {
+    "batter_hits": 0.5,
+    "batter_total_bases": 1.5,
+    "batter_home_runs": 0.5,
+}
+MARKET_NAMES = {
+    "batter_hits": "Batter Hits",
+    "batter_total_bases": "Batter Total Bases",
+    "batter_home_runs": "Batter Home Runs",
+}
 
 
 @dataclass(frozen=True)
@@ -56,15 +66,15 @@ class Config:
     supabase_url: str
     supabase_key: str
     api_key: str
-    provider: str = "the_odds_api"
-    sport_key: str = "baseball_mlb"
-    regions: str | None = "us,uk"
-    bookmakers: str | None = None
-    market_key: str = "batter_hits"
-    target_date: str | None = None
-    skip_started: bool = True
-    max_events: int = 20
-    dry_run: bool = False
+    provider: str
+    sport_key: str
+    regions: str | None
+    bookmakers: str | None
+    market_keys: tuple[str, ...]
+    target_date: str | None
+    skip_started: bool
+    max_events: int
+    dry_run: bool
 
 
 @dataclass
@@ -77,9 +87,6 @@ class ApiUsage:
 
     def record(self, headers: dict[str, str]) -> None:
         self.requests_made += 1
-
-        # The Odds API has used different header names across docs/examples.
-        # Capture the common variants so the GitHub log still works if one is absent.
         self.latest_requests_used = (
             headers.get("x-requests-used")
             or headers.get("x-requests-used-today")
@@ -130,9 +137,7 @@ def env_int(name: str, default: int) -> int:
         raise RuntimeError(f"{name} must be an integer, got {value!r}") from exc
 
 
-
 def parse_bookmakers(value: str | None) -> str | None:
-    """Return a normalized bookmaker allowlist, or None to accept all books."""
     if value is None:
         return None
     cleaned = value.strip()
@@ -141,6 +146,21 @@ def parse_bookmakers(value: str | None) -> str | None:
     books = [book.strip().lower() for book in cleaned.split(",") if book.strip()]
     return ",".join(dict.fromkeys(books)) or None
 
+
+def parse_market_keys() -> tuple[str, ...]:
+    multi = os.getenv("ODDS_MARKET_KEYS")
+    single = os.getenv("ODDS_MARKET_KEY") or os.getenv("MARKET_KEY")
+    raw = multi if multi else single
+    values = [v.strip() for v in raw.split(",")] if raw else list(DEFAULT_MARKETS)
+    keys = tuple(dict.fromkeys(v for v in values if v))
+    unsupported = [key for key in keys if key not in TARGET_LINES]
+    if unsupported:
+        raise RuntimeError(f"Unsupported batter prop market key(s): {', '.join(unsupported)}")
+    if not keys:
+        raise RuntimeError("At least one batter prop market key is required")
+    return keys
+
+
 def load_config() -> Config:
     return Config(
         supabase_url=require_env("SUPABASE_URL"),
@@ -148,9 +168,9 @@ def load_config() -> Config:
         api_key=require_env("THE_ODDS_API_KEY"),
         provider=os.getenv("ODDS_PROVIDER", "the_odds_api"),
         sport_key=os.getenv("ODDS_SPORT_KEY") or os.getenv("SPORT_KEY", "baseball_mlb"),
-        regions=os.getenv("ODDS_REGIONS", "us,uk") or None,
+        regions=os.getenv("ODDS_REGIONS", "us") or None,
         bookmakers=parse_bookmakers(os.getenv("ODDS_BOOKMAKERS") or os.getenv("BOOKMAKERS")),
-        market_key=os.getenv("ODDS_MARKET_KEY") or os.getenv("MARKET_KEY", "batter_hits"),
+        market_keys=parse_market_keys(),
         target_date=os.getenv("ODDS_TARGET_DATE") or None,
         skip_started=env_bool("ODDS_SKIP_STARTED", env_bool("SKIP_STARTED_GAMES", True)),
         max_events=env_int("ODDS_MAX_EVENTS", env_int("MAX_EVENTS_PER_RUN", 20)),
@@ -174,20 +194,16 @@ def http_get_json(url: str, timeout: int = 30) -> tuple[Any, dict[str, str]]:
 
 def redact_api_key(url: str) -> str:
     api_key = os.getenv("THE_ODDS_API_KEY")
-    if api_key:
-        return url.replace(api_key, "***")
-    return url
+    return url.replace(api_key, "***") if api_key else url
 
 
 def build_url(path: str, params: dict[str, Any]) -> str:
-    clean_params = {k: v for k, v in params.items() if v is not None and v != ""}
-    return f"{API_BASE}{path}?{urlencode(clean_params)}"
+    clean = {k: v for k, v in params.items() if v is not None and v != ""}
+    return f"{API_BASE}{path}?{urlencode(clean)}"
 
 
 def normalize_iso(value: str | None) -> str | None:
-    if not value:
-        return None
-    return value.replace("Z", "+00:00")
+    return value.replace("Z", "+00:00") if value else None
 
 
 def parse_dt(value: str | None) -> datetime | None:
@@ -201,9 +217,7 @@ def parse_dt(value: str | None) -> datetime | None:
 
 def date_from_iso_eastern(value: str | None) -> str | None:
     dt = parse_dt(value)
-    if not dt:
-        return None
-    return dt.astimezone(EASTERN_TZ).date().isoformat()
+    return dt.astimezone(EASTERN_TZ).date().isoformat() if dt else None
 
 
 def today_eastern() -> str:
@@ -215,7 +229,6 @@ def stable_load_key(row: dict[str, Any]) -> str:
         row.get("odds_provider") or "",
         row.get("book_name") or "",
         row.get("provider_event_id") or "",
-        str(row.get("game_pk") or ""),
         row.get("game_date") or "",
         row.get("player_name_raw") or "",
         row.get("market_key") or "",
@@ -225,15 +238,13 @@ def stable_load_key(row: dict[str, Any]) -> str:
     return hashlib.md5("|".join(parts).lower().encode("utf-8")).hexdigest()
 
 
-def event_is_today(event: dict[str, Any], target_date: str) -> bool:
+def event_is_target_date(event: dict[str, Any], target_date: str) -> bool:
     return date_from_iso_eastern(event.get("commence_time")) == target_date
 
 
 def event_has_started(event: dict[str, Any]) -> bool:
     dt = parse_dt(event.get("commence_time"))
-    if not dt:
-        return False
-    return dt <= datetime.now(timezone.utc)
+    return bool(dt and dt <= datetime.now(timezone.utc))
 
 
 def fetch_events(cfg: Config) -> tuple[list[dict[str, Any]], dict[str, str]]:
@@ -248,7 +259,7 @@ def fetch_event_odds(event_id: str, cfg: Config) -> tuple[dict[str, Any], dict[s
     params = {
         "apiKey": cfg.api_key,
         "regions": cfg.regions,
-        "markets": cfg.market_key,
+        "markets": ",".join(cfg.market_keys),
         "oddsFormat": "american",
         "bookmakers": cfg.bookmakers,
     }
@@ -259,46 +270,43 @@ def fetch_event_odds(event_id: str, cfg: Config) -> tuple[dict[str, Any], dict[s
     return payload, headers
 
 
-def extract_player_hit_rows(event: dict[str, Any], odds_payload: dict[str, Any], cfg: Config) -> list[dict[str, Any]]:
+def extract_batter_prop_rows(
+    event: dict[str, Any], odds_payload: dict[str, Any], cfg: Config
+) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
-
     event_id = str(odds_payload.get("id") or event.get("id") or "")
     commence_time = normalize_iso(odds_payload.get("commence_time") or event.get("commence_time"))
     game_date = date_from_iso_eastern(commence_time)
     home_team = odds_payload.get("home_team") or event.get("home_team")
     away_team = odds_payload.get("away_team") or event.get("away_team")
+    allowed_books = (
+        {book.strip().lower() for book in cfg.bookmakers.split(",") if book.strip()}
+        if cfg.bookmakers else None
+    )
 
     for bookmaker in odds_payload.get("bookmakers", []) or []:
-        book_key = bookmaker.get("key") or bookmaker.get("title") or "unknown"
-        if cfg.bookmakers:
-            allowed_books = {book.strip().lower() for book in cfg.bookmakers.split(",") if book.strip()}
-            if str(book_key).lower() not in allowed_books:
-                continue
-
-        odds_last_update = normalize_iso(bookmaker.get("last_update"))
+        book_key = str(bookmaker.get("key") or bookmaker.get("title") or "unknown")
+        if allowed_books and book_key.lower() not in allowed_books:
+            continue
+        book_update = normalize_iso(bookmaker.get("last_update"))
 
         for market in bookmaker.get("markets", []) or []:
-            if market.get("key") != cfg.market_key:
+            market_key = str(market.get("key") or "")
+            if market_key not in cfg.market_keys:
                 continue
-
-            market_last_update = normalize_iso(market.get("last_update")) or odds_last_update
+            target_line = TARGET_LINES[market_key]
+            market_update = normalize_iso(market.get("last_update")) or book_update
 
             for outcome in market.get("outcomes", []) or []:
                 outcome_name = str(outcome.get("name") or "").strip()
-                if outcome_name.lower() != "over":
+                if outcome_name.lower() not in {"over", "under"}:
                     continue
-
                 try:
                     line = float(outcome.get("point"))
-                except (TypeError, ValueError):
-                    continue
-
-                if line != 0.5:
-                    continue
-
-                try:
                     american_odds = int(outcome.get("price"))
                 except (TypeError, ValueError):
+                    continue
+                if line != target_line:
                     continue
 
                 player_name = outcome.get("description") or outcome.get("participant") or outcome.get("player")
@@ -307,9 +315,9 @@ def extract_player_hit_rows(event: dict[str, Any], odds_payload: dict[str, Any],
 
                 row = {
                     "odds_provider": cfg.provider,
-                    "book_name": str(book_key),
+                    "book_name": book_key,
                     "provider_event_id": event_id,
-                    "provider_market_id": cfg.market_key,
+                    "provider_market_id": market_key,
                     "game_pk": None,
                     "game_date": game_date,
                     "commence_time_utc": commence_time,
@@ -317,13 +325,13 @@ def extract_player_hit_rows(event: dict[str, Any], odds_payload: dict[str, Any],
                     "away_team": away_team,
                     "player_id": None,
                     "player_name_raw": str(player_name),
-                    "market_key": cfg.market_key,
-                    "market_name": "Batter Hits",
+                    "market_key": market_key,
+                    "market_name": MARKET_NAMES[market_key],
                     "line": line,
                     "outcome_name": outcome_name,
                     "american_odds": american_odds,
                     "decimal_odds": None,
-                    "odds_last_update": market_last_update,
+                    "odds_last_update": market_update,
                     "fetched_at": datetime.now(timezone.utc).isoformat(),
                     "raw_payload": {
                         "event": {
@@ -338,7 +346,7 @@ def extract_player_hit_rows(event: dict[str, Any], odds_payload: dict[str, Any],
                             "last_update": bookmaker.get("last_update"),
                         },
                         "market": {
-                            "key": market.get("key"),
+                            "key": market_key,
                             "last_update": market.get("last_update"),
                         },
                         "outcome": outcome,
@@ -346,72 +354,37 @@ def extract_player_hit_rows(event: dict[str, Any], odds_payload: dict[str, Any],
                 }
                 row["load_key"] = stable_load_key(row)
                 rows.append(row)
-
     return rows
 
 
 def chunked(items: list[dict[str, Any]], size: int = 500) -> list[list[dict[str, Any]]]:
-    return [items[i : i + size] for i in range(0, len(items), size)]
+    return [items[i:i + size] for i in range(0, len(items), size)]
 
 
-def print_credit_headers(headers: dict[str, str], label: str) -> None:
-    interesting = {
-        k: v
-        for k, v in headers.items()
-        if "request" in k or "credit" in k or "remaining" in k or "used" in k
-    }
-    if interesting:
-        print(f"{label} response headers: {json.dumps(interesting, indent=2)}")
+def print_usage(usage: ApiUsage) -> None:
+    print("API usage:")
+    print(json.dumps({
+        "requests_made": usage.requests_made,
+        "requests_used": usage.latest_requests_used,
+        "requests_remaining": usage.latest_requests_remaining,
+        "credits_used": usage.latest_credits_used,
+        "credits_remaining": usage.latest_credits_remaining,
+    }, indent=2))
 
-
-
-def print_run_summary(
-    *,
-    cfg: Config,
-    usage: ApiUsage,
-    events_returned: int,
-    events_for_date: int,
-    events_skipped_started: int,
-    events_processed: int,
-    rows_prepared: int,
-    rows_upserted: int,
-    unmatched_players: int | None,
-) -> None:
-    print("\n========== Odds API Summary ==========")
-    print(f"Events returned by provider: {events_returned}")
-    print(f"Events matching target date: {events_for_date}")
-    print(f"Events skipped because already started: {events_skipped_started}")
-    print(f"Events processed: {events_processed}")
-    print(f"Books queried: {cfg.bookmakers or 'ALL available books in configured regions'}")
-    print(f"Market queried: {cfg.market_key}")
-    print(f"API requests made: {usage.requests_made}")
-    print(f"Rows prepared: {rows_prepared}")
-    print(f"Rows upserted: {rows_upserted}")
-    print(f"Unmatched players: {unmatched_players if unmatched_players is not None else 'Unknown'}")
-    print(f"API requests used: {usage.latest_requests_used or 'Unknown'}")
-    print(f"API requests remaining: {usage.latest_requests_remaining or 'Unknown'}")
-    print(f"API credits used: {usage.latest_credits_used or 'Unknown'}")
-    print(f"API credits remaining: {usage.latest_credits_remaining or 'Unknown'}")
-    print("======================================\n")
 
 def main() -> int:
     cfg = load_config()
     target_date = cfg.target_date or today_eastern()
     client = create_client(cfg.supabase_url, cfg.supabase_key)
     usage = ApiUsage()
-    events_returned = 0
-    events_for_date = 0
-    events_skipped_started = 0
-    events_processed = 0
-    rows_upserted = 0
-    unmatched_players: int | None = None
 
-    print("Hit prop odds loader config:")
+    print("Batter prop odds loader config:")
     print(json.dumps({
         "provider": cfg.provider,
         "sport_key": cfg.sport_key,
-        "market_key": cfg.market_key,
-        "bookmakers": cfg.bookmakers,
+        "market_keys": cfg.market_keys,
+        "canonical_lines": {k: TARGET_LINES[k] for k in cfg.market_keys},
+        "bookmakers": cfg.bookmakers or "all",
         "regions": cfg.regions,
         "target_date_eastern": target_date,
         "skip_started": cfg.skip_started,
@@ -419,107 +392,79 @@ def main() -> int:
         "dry_run": cfg.dry_run,
     }, indent=2))
 
-    print("Fetching MLB events...")
     events, headers = fetch_events(cfg)
     usage.record(headers)
-    print_credit_headers(headers, "events")
-    events_returned = len(events)
-    print(f"Provider returned {events_returned} MLB events")
-
-    candidate_events = [event for event in events if event_is_today(event, target_date)]
-    events_for_date = len(candidate_events)
+    candidates = [e for e in events if event_is_target_date(e, target_date)]
+    skipped_started = 0
     if cfg.skip_started:
-        skipped_started = [event for event in candidate_events if event_has_started(event)]
-        events_skipped_started = len(skipped_started)
-        candidate_events = [event for event in candidate_events if not event_has_started(event)]
-        print(f"Skipped already-started events: {events_skipped_started}")
+        skipped_started = sum(1 for e in candidates if event_has_started(e))
+        candidates = [e for e in candidates if not event_has_started(e)]
+    candidates = sorted(candidates, key=lambda e: e.get("commence_time") or "")[:cfg.max_events]
 
-    candidate_events = sorted(candidate_events, key=lambda e: e.get("commence_time") or "")[: cfg.max_events]
-    print(f"Events to fetch for {target_date}: {len(candidate_events)}")
-    print(f"Estimated API calls this run: {1 + len(candidate_events)} (1 events call + {len(candidate_events)} event odds calls)")
+    print(
+        f"Provider events: {len(events)}; target-date events: {len(candidates) + skipped_started}; "
+        f"skipped started: {skipped_started}; fetching: {len(candidates)}"
+    )
+    print(f"Estimated HTTP requests: {1 + len(candidates)}")
 
     all_rows: list[dict[str, Any]] = []
-    for idx, event in enumerate(candidate_events, start=1):
+    for idx, event in enumerate(candidates, start=1):
         event_id = str(event.get("id") or "")
         if not event_id:
             continue
-
-        game_label = f"{event.get('away_team')} at {event.get('home_team')} · {event.get('commence_time')}"
-        print(f"[{idx}/{len(candidate_events)}] Fetching {cfg.market_key} for {game_label}")
+        label = f"{event.get('away_team')} at {event.get('home_team')}"
+        print(f"[{idx}/{len(candidates)}] Fetching {','.join(cfg.market_keys)} for {label}")
         try:
             payload, odds_headers = fetch_event_odds(event_id, cfg)
             usage.record(odds_headers)
-            events_processed += 1
-            print_credit_headers(odds_headers, f"event {event_id}")
         except RuntimeError as exc:
             print(f"WARNING: {exc}", file=sys.stderr)
             continue
-
-        rows = extract_player_hit_rows(event, payload, cfg)
-        books_found = sorted({row["book_name"] for row in rows})
-        print(f"  extracted {len(rows)} Over 0.5 hit rows from {len(books_found)} books: {', '.join(books_found) or 'none'}")
+        rows = extract_batter_prop_rows(event, payload, cfg)
         all_rows.extend(rows)
+        by_market: dict[str, dict[str, int]] = {}
+        for row in rows:
+            bucket = by_market.setdefault(row["market_key"], {"over": 0, "under": 0})
+            bucket[row["outcome_name"].lower()] += 1
+        print(f"  extracted {len(rows)} rows: {json.dumps(by_market, sort_keys=True)}")
         time.sleep(0.15)
 
-    print(f"Total extracted rows: {len(all_rows)}")
+    counts: dict[str, dict[str, int]] = {}
+    for row in all_rows:
+        bucket = counts.setdefault(row["market_key"], {"over": 0, "under": 0})
+        bucket[row["outcome_name"].lower()] += 1
+    print(f"Total rows prepared: {len(all_rows)}")
+    print(f"Prepared rows by market/side: {json.dumps(counts, indent=2, sort_keys=True)}")
 
     if cfg.dry_run:
-        print(json.dumps(all_rows[:10], indent=2, default=str))
-        print_run_summary(
-            cfg=cfg,
-            usage=usage,
-            events_returned=events_returned,
-            events_for_date=events_for_date,
-            events_skipped_started=events_skipped_started,
-            events_processed=events_processed,
-            rows_prepared=len(all_rows),
-            rows_upserted=0,
-            unmatched_players=None,
-        )
+        print(json.dumps(all_rows[:12], indent=2, default=str))
+        print_usage(usage)
         return 0
 
-    if not all_rows:
-        print("No rows to load. Check API key, available markets, bookmaker keys, event timing, and whether props are posted yet.")
-        print_run_summary(
-            cfg=cfg,
-            usage=usage,
-            events_returned=events_returned,
-            events_for_date=events_for_date,
-            events_skipped_started=events_skipped_started,
-            events_processed=events_processed,
-            rows_prepared=0,
-            rows_upserted=0,
-            unmatched_players=None,
-        )
-        return 0
-
-    for batch in chunked(all_rows, 500):
-        result = client.table("mlb_player_hit_prop_market_odds").upsert(batch, on_conflict="load_key").execute()
-        batch_rows = len(result.data or [])
-        rows_upserted += batch_rows
-        print(f"Loaded/upserted batch rows: {batch_rows}")
+    rows_upserted = 0
+    for batch in chunked(all_rows):
+        result = client.table("mlb_player_hit_prop_market_odds").upsert(
+            batch, on_conflict="load_key"
+        ).execute()
+        rows_upserted += len(result.data or [])
+    print(f"Rows upserted: {rows_upserted}")
 
     try:
-        health = client.table("v_mlb_hit_over05_market_edge_health").select("*").limit(1).execute()
-        print("Market edge health:")
-        print(json.dumps(health.data, indent=2, default=str))
-        if health.data:
-            unmatched_players = health.data[0].get("unmatched_odds_rows")
+        paired = (
+            client.table("v_mlb_batter_prop_market_no_vig_best")
+            .select("market_key,game_pk,player_id,book_name,no_vig_over_probability")
+            .eq("game_date", target_date)
+            .execute()
+        )
+        pair_counts: dict[str, int] = {}
+        for row in paired.data or []:
+            key = row.get("market_key") or "unknown"
+            pair_counts[key] = pair_counts.get(key, 0) + 1
+        print(f"Paired no-vig rows by market: {json.dumps(pair_counts, sort_keys=True)}")
     except Exception as exc:  # noqa: BLE001
-        print(f"WARNING: Unable to read market edge health view: {exc}", file=sys.stderr)
+        print(f"WARNING: unable to read paired no-vig view: {exc}", file=sys.stderr)
 
-    print_run_summary(
-        cfg=cfg,
-        usage=usage,
-        events_returned=events_returned,
-        events_for_date=events_for_date,
-        events_skipped_started=events_skipped_started,
-        events_processed=events_processed,
-        rows_prepared=len(all_rows),
-        rows_upserted=rows_upserted,
-        unmatched_players=unmatched_players,
-    )
-
+    print_usage(usage)
     return 0
 
 
