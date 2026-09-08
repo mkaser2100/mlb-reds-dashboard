@@ -10,7 +10,7 @@
 (() => {
   "use strict";
 
-  const BUILD = "phase9b-market-edge-v2-20260908c";
+  const BUILD = "phase9b-market-edge-v2-20260908d";
   const CACHE_TABLE = "mlb_market_edge_board_public_cache";
   const STORAGE_KEY = "marketEdgeV2State";
 
@@ -628,12 +628,10 @@
   loadSavedState();
   interceptMarketView();
 
-  // Phase 3: Market Edge is the default landing view. If index.html already
-  // marks it active, initialize immediately instead of waiting for a nav click.
-  if (el("marketEdgeView")?.classList.contains("active-view")) {
-    setPageCopy();
-    fetchLatestRows();
-  }
+  // Phase 3B: app-v4.js executes before this file and its legacy startup can
+  // reset the active view to MLB Hit Board. Market Edge is now the canonical
+  // landing page, so reclaim the default after legacy initialization finishes.
+  activateMarketView();
 
   console.info(`Market Edge V2 loaded: ${BUILD}`);
 })();
