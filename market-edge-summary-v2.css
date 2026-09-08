@@ -1,0 +1,228 @@
+/* =========================================================
+   MLB Hit Lab — Market Edge Daily Summary exact compact layout
+   Build: market-edge-summary-v2-20260908
+   Loaded after market-edge-v2.css.
+   ========================================================= */
+
+#marketEdgeContent .mev2-summary.mev2-summary-exact {
+  padding: 14px !important;
+  border-radius: 18px !important;
+}
+
+#marketEdgeContent .mev2-summary-exact .mev2-summary-header {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 18px !important;
+  margin-bottom: 10px !important;
+}
+
+#marketEdgeContent .mev2-summary-exact .mev2-summary-title-wrap {
+  display: flex !important;
+  align-items: center !important;
+  gap: 12px !important;
+  min-width: 0 !important;
+}
+
+#marketEdgeContent .mev2-summary-exact .mev2-summary-trophy {
+  width: 44px !important;
+  height: 44px !important;
+  min-width: 44px !important;
+  border-radius: 11px !important;
+  font-size: 1.35rem !important;
+}
+
+#marketEdgeContent .mev2-summary-exact .mev2-kicker {
+  margin: 0 0 3px !important;
+  color: #38bdf8 !important;
+  font-size: .64rem !important;
+  font-weight: 950 !important;
+  letter-spacing: .16em !important;
+}
+
+#marketEdgeContent .mev2-summary-exact .mev2-summary-header h2 {
+  margin: 0 !important;
+  font-size: 1.12rem !important;
+  line-height: 1.1 !important;
+}
+
+#marketEdgeContent .mev2-summary-exact .mev2-summary-header p {
+  margin: 4px 0 0 !important;
+  font-size: .70rem !important;
+}
+
+#marketEdgeContent .mev2-summary-exact .mev2-count {
+  flex: 0 0 auto !important;
+  padding: 8px 13px !important;
+  font-size: .70rem !important;
+  white-space: nowrap !important;
+}
+
+#marketEdgeContent .mev2-summary-exact .mev2-summary-grid {
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: 10px !important;
+  width: 100% !important;
+}
+
+/* Exact card shell — deliberately overrides the older flex-column card. */
+#marketEdgeContent .mev2-summary-exact .mev2-summary-card-exact {
+  display: grid !important;
+  grid-template-rows: auto auto auto !important;
+  align-content: start !important;
+  justify-content: stretch !important;
+  gap: 0 !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  min-height: 122px !important;
+  height: auto !important;
+  padding: 12px 13px !important;
+  text-align: left !important;
+  overflow: hidden !important;
+}
+
+/* Row 1: rank / handedness / logo on left; probability on right. */
+#marketEdgeContent .mev2-summary-exact .mev2-exact-top {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto !important;
+  align-items: center !important;
+  gap: 8px !important;
+  width: 100% !important;
+  min-height: 38px !important;
+}
+
+#marketEdgeContent .mev2-summary-exact .mev2-card-identity {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  gap: 8px !important;
+  min-width: 0 !important;
+}
+
+#marketEdgeContent .mev2-summary-exact .mev2-summary-rank {
+  width: 32px !important;
+  height: 32px !important;
+  flex: 0 0 32px !important;
+  font-size: .74rem !important;
+}
+
+#marketEdgeContent .mev2-summary-exact .mev2-hand-badge {
+  min-width: 38px !important;
+  height: 31px !important;
+  padding: 0 7px !important;
+  border-radius: 8px !important;
+  font-size: .68rem !important;
+}
+
+#marketEdgeContent .mev2-summary-exact .mev2-team-logo-wrap {
+  width: 34px !important;
+  height: 34px !important;
+  flex: 0 0 34px !important;
+  border-radius: 8px !important;
+}
+
+#marketEdgeContent .mev2-summary-exact .mev2-team-logo {
+  width: 27px !important;
+  height: 27px !important;
+}
+
+#marketEdgeContent .mev2-summary-exact .mev2-summary-metric {
+  justify-self: end !important;
+  min-width: 70px !important;
+  text-align: right !important;
+}
+
+#marketEdgeContent .mev2-summary-exact .mev2-summary-metric strong {
+  display: block !important;
+  font-size: 1.48rem !important;
+  line-height: 1 !important;
+  font-weight: 950 !important;
+  letter-spacing: -.035em !important;
+  font-variant-numeric: tabular-nums !important;
+}
+
+#marketEdgeContent .mev2-summary-exact .mev2-summary-metric span {
+  display: block !important;
+  margin-top: 4px !important;
+  font-size: .48rem !important;
+  font-weight: 950 !important;
+  letter-spacing: .16em !important;
+}
+
+/* Row 2: player + team, hard left. */
+#marketEdgeContent .mev2-summary-exact .mev2-exact-player {
+  display: block !important;
+  width: 100% !important;
+  margin: 8px 0 0 !important;
+  text-align: left !important;
+}
+
+#marketEdgeContent .mev2-summary-exact .mev2-exact-player strong {
+  display: block !important;
+  width: 100% !important;
+  color: #f8fafc !important;
+  font-size: .91rem !important;
+  font-weight: 900 !important;
+  line-height: 1.15 !important;
+  text-align: left !important;
+}
+
+#marketEdgeContent .mev2-summary-exact .mev2-exact-player span {
+  display: block !important;
+  width: 100% !important;
+  margin-top: 5px !important;
+  color: #8292a8 !important;
+  font-size: .66rem !important;
+  font-weight: 650 !important;
+  text-align: left !important;
+}
+
+/* Row 3: prop left, model badge right. */
+#marketEdgeContent .mev2-summary-exact .mev2-exact-bottom {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 8px !important;
+  width: 100% !important;
+  margin-top: 5px !important;
+}
+
+#marketEdgeContent .mev2-summary-exact .mev2-card-prop {
+  color: #8292a8 !important;
+  font-size: .66rem !important;
+  font-weight: 650 !important;
+  white-space: nowrap !important;
+}
+
+#marketEdgeContent .mev2-summary-exact .mev2-signal-badge {
+  max-width: 145px !important;
+  min-height: 29px !important;
+  padding: 0 10px !important;
+  font-size: .64rem !important;
+  font-weight: 850 !important;
+}
+
+/* The first card remains highlighted, but no extra height. */
+#marketEdgeContent .mev2-summary-exact .mev2-summary-card.primary {
+  min-height: 122px !important;
+}
+
+@media (max-width: 1180px) {
+  #marketEdgeContent .mev2-summary-exact .mev2-summary-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  #marketEdgeContent .mev2-summary-exact .mev2-summary-card-exact {
+    min-height: 96px !important;
+  }
+}
+
+@media (max-width: 720px) {
+  #marketEdgeContent .mev2-summary-exact .mev2-summary-header {
+    align-items: flex-start !important;
+  }
+
+  #marketEdgeContent .mev2-summary-exact .mev2-count {
+    display: none !important;
+  }
+}
