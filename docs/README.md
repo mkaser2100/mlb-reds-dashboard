@@ -1,280 +1,485 @@
-# MLB Hit Lab — MLB Prediction Platform
+# MLB Hit Lab --- MLB Player-Prop Prediction & Market Intelligence Platform
 
-> **Current product, technical, and operational reference for the generalized MLB Hit Lab prediction platform**
+> **Current product, technical, and operational reference for the
+> generalized MLB Hit Lab platform**
 
-MLB Hit Lab is a generalized **all-MLB batter prediction platform**. The application is no longer Reds-specific: Reds-only workflows, scripts, frontend logic, and team-specific code paths have been removed. The current product supports every MLB matchup through shared data contracts and serving layers.
+MLB Hit Lab is an **all-MLB player-prop prediction and market-comparison
+platform**. It combines model probabilities, sportsbook pricing, no-vig
+market probabilities, and model-vs-market edge in one league-wide daily
+workspace.
 
-The platform now contains two related prediction architectures:
+The platform currently contains four user-facing prediction targets:
 
-1. **V3 Hit Model (`hit_1plus`)** — the live production model for predicting whether a batter records at least one hit.
-2. **Power Models** — target-aware models for:
-   - **1+ Home Run (`home_run_1plus`)**
-   - **2+ Total Bases (`total_bases_2plus`)**
+1.  **1+ Hit (`hit_1plus`)** --- V3 Hit is the live production batter
+    model.
+2.  **2+ Total Bases (`total_bases_2plus`)** --- power-model target
+    currently operating in Shadow.
+3.  **1+ Home Run (`home_run_1plus`)** --- power-model target currently
+    operating in Shadow.
+4.  **Pitcher Strikeouts (`pitcher_strikeouts`)** --- a separate
+    pitcher-prop architecture that models the full strikeout
+    distribution and currently operates in Shadow.
 
-The MLB Hit Board is now outcome-aware. Users can switch among **1+ Hit**, **2+ Total Bases**, and **Home Run** while staying on the same league-wide board. The V3 Hit model remains the live production recommendation model. Home Run and 2+ Total Bases are currently marked **Shadow** so their live performance can be monitored before any future promotion decision.
+The primary product experience is now **Market Edge**. It unifies all
+four prop types and lets the user rank the slate either by **positive
+model-vs-market edge** or by **raw model probability**, across the full
+slate or a selected game. **Model Performance** is the second primary
+page.
 
-V1 and V2 have not been erased from the platform:
+The legacy MLB Hit Board remains retained in the codebase for rollback
+while the unified Market Edge experience stabilizes, but it is no longer
+the primary navigation or default landing experience.
 
-- V1 and V2 remain available in **Model Performance** for historical comparison and benchmarking.
-- Selected V2-derived matchup fields may still enrich V3 Hit player context.
-- Historical prediction tables and evaluation data are retained for auditability and research.
-- Neither V1 nor V2 should be treated as an active standalone recommendation model in the production UI.
+V1 and V2 have not been erased:
 
-**V3-C has been discontinued.** It was maintained as a parallel V3 comparison variant, but live review did not show enough incremental benefit to justify duplicate scoring, workflow, database, and monitoring complexity. Its dedicated script/workflow has been removed. V3-C should be treated as retired unless a future experiment produces a clear, measured reason to reintroduce it.
+-   V1 and V2 remain available in **Model Performance** for historical
+    comparison and benchmarking.
+-   Selected V2-derived matchup fields may still enrich V3 Hit player
+    context.
+-   Historical prediction tables and evaluation data are retained for
+    auditability and research.
+-   Neither V1 nor V2 should be treated as an active standalone
+    recommendation model in the production UI.
 
-The current engineering strategy is to keep the live V3 Hit workflow stable while collecting shadow performance for HR and 2+ TB, improving calibration and monitoring, and continuing to simplify the generalized all-MLB operating architecture.
+**V3-C has been discontinued.** It remains historical research only
+unless a future controlled experiment demonstrates clear incremental
+value.
 
----
+The current engineering strategy is to keep the production prediction
+pipelines stable, collect live Shadow performance for HR, 2+ TB, and
+Pitcher Ks, improve calibration and monitoring, and continue simplifying
+the generalized all-MLB serving and frontend architecture.
+
+------------------------------------------------------------------------
+
+## Current Production Snapshot --- September 2026
+
+  ---------------------------------------------------------------------------------
+  Area                                Current state
+  ----------------------------------- ---------------------------------------------
+  Primary daily workspace             **Market Edge**
+
+  Secondary primary page              **Model Performance**
+
+  Default landing page                **Market Edge**
+
+  Prop selector                       All Props · 1+ Hit · 2+ TB · Home Run ·
+                                      Pitcher Ks
+
+  Ranking modes                       Edge Ranking · Model Probability
+
+  Scope modes                         Top 25 · Select Game
+
+  Live batter model                   V3 Hit (`hit_1plus`)
+
+  Shadow batter models                2+ TB · Home Run
+
+  Shadow pitcher model                Pitcher Strikeouts
+
+  Unified public serving cache        `public.mlb_market_edge_board_public_cache`
+
+  Market probability                  Paired Over/Under, no-vig only
+
+  Missing paired market behavior      Market/Edge remain null and render as `—`
+
+  Odds display                        Best captured price/book may display even
+                                      when no-vig edge is unavailable
+
+  Odds operating model                One scheduled daily market snapshot to
+                                      conserve free-tier API usage
+
+  Legacy MLB Hit Board                Retained for rollback; hidden from primary
+                                      navigation
+
+  Legacy V1/V2                        Historical benchmarking in Model Performance
+
+  V3-C                                Discontinued
+  ---------------------------------------------------------------------------------
 
 # Table of Contents
 
-1. Current Product State
-2. Team Hit Board
-3. Why V3 Is the Production Hit Focus
-4. Model Evolution and Legacy Support
-5. High-Level Architecture
-6. Data Sources
-7. Feature Engineering
-8. Model Training
-9. Prediction Pipeline
+1.  Current Product State
+2.  Team Hit Board / Legacy Selected-Game Experience
+3.  Why V3 Is the Production Hit Focus
+4.  Model Evolution and Legacy Support
+5.  High-Level Architecture
+6.  Data Sources
+7.  Feature Engineering
+8.  Model Training
+9.  Prediction Pipeline
 10. Evaluation and Validation
 11. Database Design
-12. V3 Hit Board Serving Layer
+12. Serving Layers
 13. Home Run + 2+ Total Bases Power Models
-14. GitHub Actions and Daily Workflow
-15. Platform Roadmap
-16. Current Deep Technical Reference
-17. Historical Reference
+14. Pitcher Strikeout Model
+15. Unified Market Edge
+16. GitHub Actions and Daily Workflow
+17. Platform Roadmap
+18. Current Deep Technical Reference
+19. Historical Reference
 
----
+------------------------------------------------------------------------
 
 # 1. Current Product State
 
 ## Current Model Roles
 
-| Model / target | Current role | User-facing status | Standalone recommendation model? |
-|---|---|---|---:|
-| V1 Classic Hit | Historical baseline and performance benchmark | Historical | No |
-| V2 Recommended Hit | Historical benchmark and supporting matchup context | Historical | No |
-| V3 ML — `hit_1plus` | Production hit prediction, ranking, explanation, and Market Edge model | **Live** | Yes |
-| HR V1 ML — `home_run_1plus` | Daily home-run probability ranking and shadow performance evaluation | **Shadow** | Not yet promoted |
-| TB V1 ML — `total_bases_2plus` | Daily 2+ total-bases probability ranking and shadow performance evaluation | **Shadow** | Not yet promoted |
-| V3-C | Retired parallel V3 comparison variant | **Discontinued** | No |
+  -----------------------------------------------------------------------------------
+  Model / target         Current role        User-facing status            Standalone
+                                                                recommendation model?
+  ---------------------- ------------------- ------------------ ---------------------
+  V1 Classic Hit         Historical baseline Historical                            No
+                         and performance                        
+                         benchmark                              
+
+  V2 Recommended Hit     Historical          Historical                            No
+                         benchmark and                          
+                         supporting matchup                     
+                         context                                
+
+  V3 ML --- `hit_1plus`  Production hit      **Live**                             Yes
+                         prediction,                            
+                         ranking,                               
+                         explanation, and                       
+                         Market Edge model                      
+
+  HR V1 ML ---           Daily home-run      **Shadow**              Not yet promoted
+  `home_run_1plus`       probability ranking                    
+                         and shadow                             
+                         performance                            
+                         evaluation                             
+
+  TB V1 ML ---           Daily 2+            **Shadow**              Not yet promoted
+  `total_bases_2plus`    total-bases                            
+                         probability ranking                    
+                         and shadow                             
+                         performance                            
+                         evaluation                             
+
+  Pitcher K ---          Full-distribution   **Shadow**              Not yet promoted
+  `pitcher_strikeouts`   pitcher strikeout                      
+                         prediction, market                     
+                         comparison, and                        
+                         shadow evaluation                      
+
+  V3-C                   Retired parallel V3 **Discontinued**                      No
+                         comparison variant                     
+  -----------------------------------------------------------------------------------
 
 ## Active Product Experiences
 
-### MLB Hit Board
+### Market Edge --- Primary Daily Workspace
 
-The league-wide MLB Hit Board is now a single outcome-aware experience with the selector:
+Market Edge is the default landing page and primary production
+workspace.
 
-```text
-1+ Hit | 2+ Total Bases | Home Run
+The prop selector is:
+
+``` text
+All Props | 1+ Hit | 2+ TB | Home Run | Pitcher Ks
 ```
 
-The board preserves one interaction model while changing the prediction target, probability label, matchup context, and player-detail content.
+The ranking selector is:
 
-- **1+ Hit** uses the live V3 serving path and retains Hit-specific odds/Market Edge behavior.
-- **2+ Total Bases** uses the generalized power-model serving path and is labeled Shadow.
-- **Home Run** uses the generalized power-model serving path and is labeled Shadow.
-- Hit-specific sportsbook odds are not shown in HR/TB mode unless a matching market is explicitly supported.
-- HR/TB player drawers emphasize power/contact context such as recent TB/HR/XBH, ISO, SLG, barrel rate, hard-hit rate, opposing-pitcher damage allowed, park factors, roof, and wind.
+``` text
+Edge Ranking | Model Probability
+```
 
-### Team Hit Board
+The scope selector is:
 
-The Team Hit Board remains the selected-game V3 Hit experience. Users can choose any scheduled MLB game and inspect hitters from either team.
+``` text
+Top 25 | Select Game
+```
 
-### Model Performance / Monitoring
+**Model Probability** answers: *What does the model like most?*
 
-V1 and V2 remain useful as historical Hit benchmarks. The new power-model architecture has its own daily and rolling scorecards for HR and 2+ TB.
+**Edge Ranking** answers: *Where does the model disagree favorably with
+a valid sportsbook market?*
+
+Edge Ranking only includes rows with:
+
+-   a captured market
+-   a valid paired Over/Under no-vig probability
+-   a non-null model probability
+-   a **positive** model-vs-market edge
+
+The UI never converts a missing market into `0%`. If a paired no-vig
+market is unavailable, Market and Edge remain null and render as `—`.
+
+The daily summary adapts to the active ranking mode:
+
+-   **Top 3 Model Plays** for Model Probability
+-   **Top 3 Edge Plays** for Edge Ranking
+
+The current visual language uses compact team/matchup labels, handedness
+badges, MLB team logos, ranked summary cards, highlighted top
+opportunities, formatted sportsbook names, and prop-aware detail
+drawers.
+
+### Model Performance
+
+Model Performance remains the second primary page. It is the home for
+historical benchmarking, rolling performance, and comparison of active
+and legacy model results.
+
+### Legacy MLB Hit Board / Team Hit Board
+
+The previous MLB Hit Board and selected-game Team Hit Board remain in
+the codebase for rollback and historical continuity while Market Edge
+stabilizes. They are no longer the default landing experience or primary
+navigation.
 
 ## Generalized MLB Status
 
-The application was originally Reds-focused, but that architecture has been retired.
+The application was originally Reds-focused, but that runtime
+architecture has been retired.
 
 **Current state:**
 
-- Reds-specific GitHub workflows have been removed.
-- Reds-specific scoring/ingestion scripts have been removed.
-- Reds-specific frontend branching and recommendation logic have been removed.
-- New development must use all-MLB tables, views, scripts, and workflow paths.
-- Historical documentation may still mention the Reds to explain the application's origin, but those references do **not** describe active runtime logic.
+-   Reds-specific GitHub workflows have been removed.
+-   Reds-specific scoring/ingestion scripts have been removed.
+-   Reds-specific frontend branching and recommendation logic have been
+    removed.
+-   New development must use all-MLB tables, views, scripts, and
+    workflow paths.
+-   Historical documentation may still mention the Reds to explain the
+    application's origin, but those references do **not** describe
+    active runtime logic.
 
 ## Product Direction
 
-The platform should now be described as a **generalized MLB prediction platform with one live Hit model and two shadow power targets**.
+The platform should now be described as a **generalized MLB player-prop
+prediction and market-intelligence platform**.
 
-The objective is not to create three unrelated products. The design principle is:
+The design principle is:
 
-> **One batter-intelligence platform, multiple clearly defined prediction outcomes.**
+> **One MLB prop-intelligence workspace, multiple clearly defined
+> prediction outcomes, and one consistent model-vs-market contract.**
 
-
-# 2. Team Hit Board
+# 2. Team Hit Board / Legacy Selected-Game Experience
 
 The Team Hit Board is the generalized selected-game V3 Hit experience.
 
-Users can select **any available MLB matchup** and view V3-ranked hitters for that game. There is no active Reds-specific workflow, script, scoring branch, or team-default logic required by the platform.
+Users can select **any available MLB matchup** and view V3-ranked
+hitters for that game. There is no active Reds-specific workflow,
+script, scoring branch, or team-default logic required by the platform.
 
 The Team Hit Board includes:
 
-- a game selector populated from the current V3 prediction slate
-- All, Away, and Home hitter filters
-- home and away starting-pitcher selection
-- pitcher ERA, WHIP, throwing hand, and BAA splits versus left- and right-handed batters
-- player rankings based on V3 hit probability
-- player search
-- player-detail drawers with positive model drivers, risk factors, recent form, splits, and pitcher context
-- odds and Market Edge context where available
+-   a game selector populated from the current V3 prediction slate
+-   All, Away, and Home hitter filters
+-   home and away starting-pitcher selection
+-   pitcher ERA, WHIP, throwing hand, and BAA splits versus left- and
+    right-handed batters
+-   player rankings based on V3 hit probability
+-   player search
+-   player-detail drawers with positive model drivers, risk factors,
+    recent form, splits, and pitcher context
+-   odds and Market Edge context where available
 
 The active serving views are:
 
-```text
+``` text
 public.v_mlb_v3_game_selector
 public.v_mlb_v3_game_hit_board_cache
 ```
 
-The Team Hit Board filters the generic game-board serving layer by `game_pk`.
+The Team Hit Board filters the generic game-board serving layer by
+`game_pk`.
 
-**Reds-specific compatibility wrappers are no longer part of the intended application architecture.** New Team Hit Board work should only use generalized MLB contracts.
-
+**Reds-specific compatibility wrappers are no longer part of the
+intended application architecture.** New Team Hit Board work should only
+use generalized MLB contracts.
 
 # 3. Why V3 Is the Production Hit Focus
 
-The product has consolidated around V3 for both technical and product reasons:
+The product has consolidated around V3 for both technical and product
+reasons:
 
-- V3 produces explicit hit probabilities instead of relying only on a fixed heuristic score.
-- It supports broader feature engineering, including Statcast contact quality and pitch-arsenal context.
-- It provides a scalable foundation for calibration, explainability, drift monitoring, and retraining.
-- It has shown encouraging performance among the highest-ranked daily predictions.
-- A single recommendation model creates a clearer user experience and avoids conflicting rankings.
-- Concentrating development on one production model reduces duplicate frontend, workflow, and database logic.
-- A V3-first direction makes it easier to evaluate whether each new feature materially improves the production model.
+-   V3 produces explicit hit probabilities instead of relying only on a
+    fixed heuristic score.
+-   It supports broader feature engineering, including Statcast contact
+    quality and pitch-arsenal context.
+-   It provides a scalable foundation for calibration, explainability,
+    drift monitoring, and retraining.
+-   It has shown encouraging performance among the highest-ranked daily
+    predictions.
+-   A single recommendation model creates a clearer user experience and
+    avoids conflicting rankings.
+-   Concentrating development on one production model reduces duplicate
+    frontend, workflow, and database logic.
+-   A V3-first direction makes it easier to evaluate whether each new
+    feature materially improves the production model.
 
-Performance must continue to be evaluated over larger samples. V1 and V2 remain visible as benchmarks so the decision to use V3 is continuously validated rather than assumed permanently.
+Performance must continue to be evaluated over larger samples. V1 and V2
+remain visible as benchmarks so the decision to use V3 is continuously
+validated rather than assumed permanently.
 
----
+------------------------------------------------------------------------
 
 # 4. Model Evolution and Legacy Support
 
-## V1 — Classic Matchup Model
+## V1 --- Classic Matchup Model
 
-V1 was the original deterministic matchup-scoring approach. It combined recent form, batter splits, pitcher vulnerability, and pitcher recent form using fixed weights.
+V1 was the original deterministic matchup-scoring approach. It combined
+recent form, batter splits, pitcher vulnerability, and pitcher recent
+form using fixed weights.
 
-V1 is no longer presented as a standalone recommendation board. Its historical predictions and performance data remain useful as a baseline for evaluating later models.
+V1 is no longer presented as a standalone recommendation board. Its
+historical predictions and performance data remain useful as a baseline
+for evaluating later models.
 
-## V2 — Recommended Model
+## V2 --- Recommended Model
 
-V2 extended the original approach with adjusted split information, expected plate appearances, lineup context, and additional matchup signals.
+V2 extended the original approach with adjusted split information,
+expected plate appearances, lineup context, and additional matchup
+signals.
 
-V2 is no longer presented as a standalone recommendation board. Selected V2 fields may still enrich V3 player context, and V2 remains available in Model Performance for comparison.
+V2 is no longer presented as a standalone recommendation board. Selected
+V2 fields may still enrich V3 player context, and V2 remains available
+in Model Performance for comparison.
 
-## V3 — Machine-Learning Production Model
+## V3 --- Machine-Learning Production Model
 
-V3 replaced fixed recommendation scoring with a trained probability model. It is the active production model used for:
+V3 replaced fixed recommendation scoring with a trained probability
+model. It is the active production model used for:
 
-- daily league-wide MLB rankings
-- selected-game Team Hit Board rankings
-- hit-probability estimates
-- confidence tiers
-- player-level explanations
-- Market Edge comparisons
-- current product recommendations
+-   daily league-wide MLB rankings
+-   selected-game Team Hit Board rankings
+-   hit-probability estimates
+-   confidence tiers
+-   player-level explanations
+-   Market Edge comparisons
+-   current product recommendations
 
-## V3-C — Discontinued Comparison Variant
+## V3-C --- Discontinued Comparison Variant
 
-V3-C was a parallel comparison variant used to test whether an alternate V3 path produced enough additional value to justify operating a second V3-style model.
+V3-C was a parallel comparison variant used to test whether an alternate
+V3 path produced enough additional value to justify operating a second
+V3-style model.
 
-It has been **discontinued** because observed results did not demonstrate a meaningful enough incremental benefit over the primary V3 workflow to justify:
+It has been **discontinued** because observed results did not
+demonstrate a meaningful enough incremental benefit over the primary V3
+workflow to justify:
 
-- duplicate daily scoring
-- duplicate GitHub Actions execution
-- duplicate prediction/evaluation storage
-- additional operational monitoring
-- extra frontend/model-selection complexity
-- additional failure modes and maintenance cost
+-   duplicate daily scoring
+-   duplicate GitHub Actions execution
+-   duplicate prediction/evaluation storage
+-   additional operational monitoring
+-   extra frontend/model-selection complexity
+-   additional failure modes and maintenance cost
 
-The dedicated V3-C script and workflow have been removed. Historical V3-C data may remain for audit/research purposes, but V3-C is not an active scoring path and should not be included in current model comparisons unless explicitly performing historical research.
+The dedicated V3-C script and workflow have been removed. Historical
+V3-C data may remain for audit/research purposes, but V3-C is not an
+active scoring path and should not be included in current model
+comparisons unless explicitly performing historical research.
 
 ## Legacy-Support Policy
 
 Legacy model assets should be handled according to the following rules:
 
-1. Preserve V1 and V2 performance history.
-2. Preserve V2 supporting context that is actively consumed by V3.
-3. Do not reintroduce standalone V1 or V2 recommendation boards without a new product decision.
-4. Do not delete historical database objects until their workflow and dependency chains are documented.
-5. Treat V3 as the default live Hit model in new UI, pipeline, monitoring, and documentation work.
-6. Treat V3-C as discontinued; do not recreate its workflow or script without a new measured experiment showing clear incremental value.
+1.  Preserve V1 and V2 performance history.
+2.  Preserve V2 supporting context that is actively consumed by V3.
+3.  Do not reintroduce standalone V1 or V2 recommendation boards without
+    a new product decision.
+4.  Do not delete historical database objects until their workflow and
+    dependency chains are documented.
+5.  Treat V3 as the default live Hit model in new UI, pipeline,
+    monitoring, and documentation work.
+6.  Treat V3-C as discontinued; do not recreate its workflow or script
+    without a new measured experiment showing clear incremental value.
 
----
+------------------------------------------------------------------------
 
-# Chapter 5 – High-Level Architecture
+# Chapter 5 -- High-Level Architecture
 
-The model follows the pipeline below.
+The current platform separates model generation from public serving and
+converges all user-facing props into one Market Edge contract.
 
-```text
-                          ALL-MLB DATA SOURCES
-                                  ↓
-                     Ingestion / game / Statcast data
-                                  ↓
-                 ┌────────────────┴────────────────┐
-                 │                                 │
-                 ▼                                 ▼
-        V3 HIT FEATURE PATH                POWER FEATURE PATH
-          target: hit_1plus              shared batter/game row
-                 │                       HR + TB feature contract
-                 ▼                                 │
-        V3 model training                          ▼
-                 │                    HR / 2+ TB model artifacts
-                 ▼                                 │
-        V3 daily scoring                           ▼
-                 │                     GitHub daily power scorer
-                 ▼                                 │
-      V3 Hit serving cache                        ▼
-                 │                 generalized batter predictions
-                 │                    ranking + DB validation
-                 │                                 │
-                 └──────────────┬──────────────────┘
-                                ▼
-                     MLB HIT BOARD (OUTCOME TOGGLE)
-                   1+ Hit | 2+ Total Bases | Home Run
-                                │
-               ┌────────────────┴─────────────────┐
-               ▼                                  ▼
-      Team Hit Board / Market Edge       HR/TB Shadow Monitoring
-               │                                  │
-               └────────────────┬─────────────────┘
-                                ▼
-                    Actuals + Evaluation + Scorecards
+``` text
+                               ALL-MLB DATA SOURCES
+                                       ↓
+                    Game / lineup / Statcast / odds ingestion
+                                       ↓
+             ┌─────────────────────────┴──────────────────────────┐
+             │                                                    │
+             ▼                                                    ▼
+      BATTER MODEL PATH                                  PITCHER K PATH
+             │                                                    │
+     ┌───────┴────────┐                                  feature contract
+     │                │                                           │
+     ▼                ▼                                           ▼
+ V3 Hit Model     Power Models                           K distribution model
+  hit_1plus       HR + 2+ TB                           P(K=0)...P(K=12+)
+     │                │                                           │
+     └───────┬────────┘                                           │
+             ▼                                                    ▼
+ generalized batter serving                            pitcher K public cache
+             │                                                    │
+             └─────────────────────┬──────────────────────────────┘
+                                   ▼
+                       MARKET / ODDS NORMALIZATION
+                     best price + paired no-vig market
+                                   │
+                                   ▼
+             public.mlb_market_edge_board_public_cache
+                                   │
+                    ┌──────────────┴──────────────┐
+                    ▼                             ▼
+              MARKET EDGE                  MODEL PERFORMANCE
+        default daily workspace          evaluation / benchmarking
 ```
 
----
+## Serving Principles
 
-# Chapter 6 – Data Sources
+1.  The browser reads **public serving contracts**, not internal
+    prediction tables.
+2.  Batter and pitcher models may have different feature/model
+    architectures while sharing one user-facing Market Edge schema.
+3.  Sportsbook odds are **not model features** for the Pitcher K model;
+    they are used only in the market-comparison layer.
+4.  No-vig market probability requires a valid paired Over/Under market.
+5.  Missing market data remains missing; the frontend must never coerce
+    null market values to zero.
+6.  Model Probability ranking can operate without sportsbook data.
+7.  Edge Ranking requires a valid paired no-vig market and positive
+    edge.
 
-This chapter documents every upstream data source used by V3, including MLB game data, Statcast metrics, pitcher arsenal data, Supabase storage, and GitHub Actions orchestration.
+# Chapter 6 -- Data Sources
 
----
+This chapter documents every upstream data source used by V3, including
+MLB game data, Statcast metrics, pitcher arsenal data, Supabase storage,
+and GitHub Actions orchestration.
 
-# Chapter 7 – Feature Engineering
+------------------------------------------------------------------------
+
+# Chapter 7 -- Feature Engineering
 
 Feature engineering is the core of the V3 prediction engine.
 
 ## Traditional Features
 
-Rolling averages, recent form, matchup scores, batter splits, pitcher splits, and historical production.
+Rolling averages, recent form, matchup scores, batter splits, pitcher
+splits, and historical production.
 
 ## Statcast Contact Quality
 
-The Statcast enhancement layer expands the model from **82** to **110** engineered features.
-
+The Statcast enhancement layer expands the model from **82** to **110**
+engineered features.
 
 # Statcast Contact Quality & Pitch Arsenal Architecture
 
 ## Overview
 
-The V3 model was enhanced with a new Statcast feature layer that augments—rather than replaces—the existing rolling-window feature engineering. Traditional features identify who has performed well recently; the Statcast layer estimates *why* a hitter is likely (or unlikely) to succeed in today's specific matchup.
+The V3 model was enhanced with a new Statcast feature layer that
+augments---rather than replaces---the existing rolling-window feature
+engineering. Traditional features identify who has performed well
+recently; the Statcast layer estimates *why* a hitter is likely (or
+unlikely) to succeed in today's specific matchup.
 
-The enhancement expanded the feature set from **82 features** to **110 features** by adding contact-quality metrics, engineered interaction features, and pitch-arsenal matchup features.
+The enhancement expanded the feature set from **82 features** to **110
+features** by adding contact-quality metrics, engineered interaction
+features, and pitch-arsenal matchup features.
 
 ## Design Philosophy
 
@@ -282,13 +487,17 @@ Traditional statistics answer **"What happened?"**
 
 Statcast attempts to answer **"What should have happened?"**
 
-Pitch arsenal analysis attempts to answer **"What is likely to happen today?"**
+Pitch arsenal analysis attempts to answer **"What is likely to happen
+today?"**
 
-The objective is to estimate which hitters have the highest probability of recording at least one hit today using recent form, historical splits, expected contact quality, and the projected pitch mix they will face.
+The objective is to estimate which hitters have the highest probability
+of recording at least one hit today using recent form, historical
+splits, expected contact quality, and the projected pitch mix they will
+face.
 
 ## Architecture
 
-```text
+``` text
 Historical Game Data
         │
         ▼
@@ -312,183 +521,258 @@ Machine Learning Model
 
 ## Batter Contact Features
 
-- batter_contact_bbe
-- batter_hard_hit_rate
-- batter_barrel_rate
-- batter_xba
-- batter_xwoba_contact
+-   batter_contact_bbe
+-   batter_hard_hit_rate
+-   batter_barrel_rate
+-   batter_xba
+-   batter_xwoba_contact
 
 ## Pitcher Contact Features
 
-- pitcher_contact_bbe
-- pitcher_hard_hit_rate_allowed
-- pitcher_barrel_rate_allowed
-- pitcher_xba_allowed
-- pitcher_xwoba_contact_allowed
+-   pitcher_contact_bbe
+-   pitcher_hard_hit_rate_allowed
+-   pitcher_barrel_rate_allowed
+-   pitcher_xba_allowed
+-   pitcher_xwoba_contact_allowed
 
 ## Engineered Contact Features
 
-- **hard_hit_collision** – interaction between hitter hard-hit ability and pitcher hard-hit suppression.
-- **barrel_collision** – interaction between hitter barrel rate and pitcher barrel rate allowed.
-- **xba_matchup** – batter xBA minus pitcher xBA allowed.
-- **contact_quality_edge** – composite expected contact advantage.
+-   **hard_hit_collision** -- interaction between hitter hard-hit
+    ability and pitcher hard-hit suppression.
+-   **barrel_collision** -- interaction between hitter barrel rate and
+    pitcher barrel rate allowed.
+-   **xba_matchup** -- batter xBA minus pitcher xBA allowed.
+-   **contact_quality_edge** -- composite expected contact advantage.
 
 ## Pitch Arsenal Features
 
-The model evaluates the projected pitch mix for today's pitcher and weights hitter performance accordingly.
+The model evaluates the projected pitch mix for today's pitcher and
+weights hitter performance accordingly.
 
 Key features include:
 
-- arsenal_weighted_batter_xba
-- arsenal_weighted_batter_xwoba
-- arsenal_weighted_batter_whiff_rate
-- arsenal_weighted_pitcher_xba_allowed
-- arsenal_weighted_pitcher_whiff_rate
-- arsenal_xba_edge
-- arsenal_whiff_risk
-- arsenal_coverage_pct
-- arsenal_matched_pitch_types
+-   arsenal_weighted_batter_xba
+-   arsenal_weighted_batter_xwoba
+-   arsenal_weighted_batter_whiff_rate
+-   arsenal_weighted_pitcher_xba_allowed
+-   arsenal_weighted_pitcher_whiff_rate
+-   arsenal_xba_edge
+-   arsenal_whiff_risk
+-   arsenal_coverage_pct
+-   arsenal_matched_pitch_types
 
 Availability flags:
 
-- contact_feature_available
-- arsenal_feature_available
+-   contact_feature_available
+-   arsenal_feature_available
 
 Additional context features:
 
-- batter_bats
-- pitcher_throws
-- effective_batter_side
+-   batter_bats
+-   pitcher_throws
+-   effective_batter_side
 
 ## Validation Results
 
-Using identical training and validation windows, adding the Statcast layer improved overall probability quality while producing the largest gains among the highest-confidence predictions.
+Using identical training and validation windows, adding the Statcast
+layer improved overall probability quality while producing the largest
+gains among the highest-confidence predictions.
 
-| Metric | Original (82) | Statcast (110) |
-|---|---:|---:|
-| ROC AUC | 0.5664 | **0.5681** |
-| Log Loss | 0.6868 | **0.6839** |
-| Brier Score | 0.2466 | **0.2452** |
-| Top 1 | 71.4% | **85.7%** |
-| Top 5 | 65.7% | **77.1%** |
-| Top 10 | **68.6%** | 67.1% |
-| Top 20 | **64.3%** | 62.9% |
-| Top 25 | 61.7% | **62.3%** |
+  Metric          Original (82)   Statcast (110)
+  ------------- --------------- ----------------
+  ROC AUC                0.5664       **0.5681**
+  Log Loss               0.6868       **0.6839**
+  Brier Score            0.2466       **0.2452**
+  Top 1                   71.4%        **85.7%**
+  Top 5                   65.7%        **77.1%**
+  Top 10              **68.6%**            67.1%
+  Top 20              **64.3%**            62.9%
+  Top 25                  61.7%        **62.3%**
 
 ## Current Limitations
 
 The current implementation does not yet model:
 
-- Exit velocity trends
-- Launch angle trends
-- Sprint speed
-- Weather adjustments
-- Park factors
-- Umpire tendencies
-- Defensive positioning
-- SHAP/permutation feature importance
+-   Exit velocity trends
+-   Launch angle trends
+-   Sprint speed
+-   Weather adjustments
+-   Park factors
+-   Umpire tendencies
+-   Defensive positioning
+-   SHAP/permutation feature importance
 
 ## Future Roadmap
 
 Potential future enhancements include:
 
-- SHAP explainability
-- Automated feature importance reporting
-- Park-adjusted contact quality
-- Weather-aware predictions
-- Pitch movement and tunneling metrics
-- Rolling Statcast trend features
-- Ensemble modeling
+-   SHAP explainability
+-   Automated feature importance reporting
+-   Park-adjusted contact quality
+-   Weather-aware predictions
+-   Pitch movement and tunneling metrics
+-   Rolling Statcast trend features
+-   Ensemble modeling
 
-This enhancement establishes the foundation for future context-aware matchup modeling while preserving compatibility with existing V3 training records, prediction contracts, and selected supporting feature sources.
-
+This enhancement establishes the foundation for future context-aware
+matchup modeling while preserving compatibility with existing V3
+training records, prediction contracts, and selected supporting feature
+sources.
 
 ## Final Feature Set
 
-The production model now combines traditional baseball metrics with context-aware Statcast and pitch arsenal features.
+The production model now combines traditional baseball metrics with
+context-aware Statcast and pitch arsenal features.
 
----
+------------------------------------------------------------------------
 
-# Chapter 8 – Model Training
+# Chapter 8 -- Model Training
 
 (Existing model training documentation retained below.)
 
-# Chapter 9 – Prediction Pipeline
+# Chapter 9 -- Prediction Pipeline
 
 (Existing prediction workflow documentation retained below.)
 
-# Chapter 10 – Evaluation & Validation
+# Chapter 10 -- Evaluation & Validation
 
-Includes ROC AUC, Log Loss, Brier Score, Top-N hit rates, calibration, and validation methodology.
+Includes ROC AUC, Log Loss, Brier Score, Top-N hit rates, calibration,
+and validation methodology.
 
-# Chapter 11 – Database Design
+# Chapter 11 -- Database Design
 
 Supabase schema, prediction tables, registries, and supporting views.
 
-# Chapter 12 – V3 Hit Board Serving Layer
+# Chapter 12 -- Serving Layers
 
-The production UI reads from a shared league-wide serving layer rather than a team-specific prediction view.
+The production UI reads from public serving layers rather than directly
+querying internal prediction tables.
 
-Primary objects:
+## Unified Market Edge Serving Cache
 
-```text
+Primary cross-prop object:
+
+``` text
+public.mlb_market_edge_board_public_cache
+```
+
+Each row represents one ranked prop opportunity and can contain:
+
+-   `row_key`
+-   `game_date`
+-   `game_pk`
+-   `game_label`
+-   `game_time_utc`
+-   `prop_type`
+-   `prop_label`
+-   `entity_type`
+-   `player_id`
+-   `player_name`
+-   team and opponent identifiers/names
+-   `handedness`
+-   `market_line`
+-   `side`
+-   `model_probability`
+-   `market_probability_no_vig`
+-   `edge_probability`
+-   `best_american_odds`
+-   `best_book`
+-   `market_available`
+-   `market_updated_at`
+-   `model_name`
+-   `model_status`
+-   `prediction_stage`
+-   `quality_status`
+-   model/edge ranking fields for overall, prop, and game scope
+-   `refreshed_at`
+
+The internal refresh path populates this cache from generalized batter
+and Pitcher K serving sources plus normalized market data.
+
+The cache is safe for browser reads through RLS with `anon` /
+`authenticated` SELECT access. Internal prediction tables and refresh
+logic remain non-public.
+
+## Legacy V3 Hit Serving Layer
+
+The previous V3 Hit Board objects remain useful for the retained legacy
+selected-game experience:
+
+``` text
 mlb_v3_hit_board_serving_cache
 v_mlb_v3_game_selector
 v_mlb_v3_game_hit_board_cache
 ```
 
-`v_mlb_v3_game_selector` provides one row per available matchup and contains the metadata required to populate the Team Hit Board game selector.
+`v_mlb_v3_game_selector` provides matchup metadata for game selection.
 
-`v_mlb_v3_game_hit_board_cache` provides player-level V3 prediction, ranking, matchup, and drawer-explanation data for every available game. The UI selects one matchup using `game_pk` and applies Away/Home filtering using `hitter_side`.
+`v_mlb_v3_game_hit_board_cache` provides player-level V3 prediction,
+ranking, matchup, and drawer-explanation data for available games.
 
-This design allows the same frontend and serving contract to support every MLB matchup.
+These objects should no longer be treated as the primary cross-prop
+frontend contract. New unified Market Edge development should use
+`public.mlb_market_edge_board_public_cache`.
 
+# Chapter 13 -- Home Run + 2+ Total Bases Power Models
 
-# Chapter 13 – Home Run + 2+ Total Bases Power Models
-
-This chapter documents the generalized power-model architecture added alongside the production V3 Hit workflow. It is intended to be understandable by an engineer, analyst, or data scientist who is new to the repository.
+This chapter documents the generalized power-model architecture added
+alongside the production V3 Hit workflow. It is intended to be
+understandable by an engineer, analyst, or data scientist who is new to
+the repository.
 
 The two power targets are:
 
-```text
+``` text
 home_run_1plus
 total_bases_2plus
 ```
 
-Both targets currently operate in **Shadow** mode. They generate real daily probabilities and are evaluated against actual MLB results, but they have not replaced the production V3 Hit recommendation model.
+Both targets currently operate in **Shadow** mode. They generate real
+daily probabilities and are evaluated against actual MLB results, but
+they have not replaced the production V3 Hit recommendation model.
 
 ## 13.1 Why the Power Models Are Separate from V3 Hit
 
-The power models intentionally share the application and database ecosystem with V3 Hit while keeping their model-training/scoring architecture separate.
+The power models intentionally share the application and database
+ecosystem with V3 Hit while keeping their model-training/scoring
+architecture separate.
 
 Reasons:
 
-1. **Different targets.** Predicting any hit, a home run, and 2+ total bases are statistically different problems with different base rates.
-2. **Different useful features.** HR/TB rely more heavily on damage/contact-quality features such as ISO, SLG, barrels, hard-hit rate, extra-base hits, park HR factor, and pitcher power allowed.
-3. **Safer rollout.** New targets can be shadow-scored and measured without destabilizing the live V3 Hit workflow.
-4. **Generalized future design.** The prediction table uses `target_name`, so additional batter outcomes can be added later without creating one table per model.
+1.  **Different targets.** Predicting any hit, a home run, and 2+ total
+    bases are statistically different problems with different base
+    rates.
+2.  **Different useful features.** HR/TB rely more heavily on
+    damage/contact-quality features such as ISO, SLG, barrels, hard-hit
+    rate, extra-base hits, park HR factor, and pitcher power allowed.
+3.  **Safer rollout.** New targets can be shadow-scored and measured
+    without destabilizing the live V3 Hit workflow.
+4.  **Generalized future design.** The prediction table uses
+    `target_name`, so additional batter outcomes can be added later
+    without creating one table per model.
 
 ## 13.2 Shared Power Feature Layer
 
 Primary table:
 
-```text
+``` text
 public.mlb_ml_batter_power_features_daily
 ```
 
 Primary key:
 
-```text
+``` text
 (game_date, game_pk, player_id)
 ```
 
-Each row represents one batter in one MLB game and contains only features available for that prediction context.
+Each row represents one batter in one MLB game and contains only
+features available for that prediction context.
 
 Important feature groups include:
 
 ### Recent batter production
 
-```text
+``` text
 batter_tb_w3 / w5 / w10 / w15
 batter_hr_w3 / w5 / w10 / w15
 batter_xbh_w3 / w5 / w10 / w15
@@ -496,13 +780,15 @@ batter_slg_*
 batter_iso_*
 ```
 
-The exact available rolling columns are governed by the feature contract. Rolling values use **prior games only**; the current game's result is never included in its own prediction features.
+The exact available rolling columns are governed by the feature
+contract. Rolling values use **prior games only**; the current game's
+result is never included in its own prediction features.
 
 ### Batter contact quality
 
 Examples include:
 
-```text
+``` text
 batter_avg_exit_velocity_30d
 batter_max_exit_velocity_30d
 batter_hard_hit_rate_30d
@@ -517,7 +803,7 @@ batter_xwoba_contact_30d
 
 Examples include:
 
-```text
+``` text
 pitcher_barrel_rate_allowed_30d
 pitcher_hard_hit_rate_allowed_30d
 pitcher_xba_allowed_30d
@@ -526,13 +812,16 @@ pitcher_xwoba_contact_allowed_30d
 
 ### Matchup / arsenal context
 
-The feature layer can include batter-vs-pitcher-side information plus pitch-mix/arsenal matchup metrics. The objective is to represent how a batter's contact profile matches the pitch types and damage profile of the expected opposing pitcher.
+The feature layer can include batter-vs-pitcher-side information plus
+pitch-mix/arsenal matchup metrics. The objective is to represent how a
+batter's contact profile matches the pitch types and damage profile of
+the expected opposing pitcher.
 
 ### Lineup / handedness
 
 Examples:
 
-```text
+``` text
 batting_order
 home_away
 batter_bats
@@ -544,7 +833,7 @@ effective_batter_side
 
 Examples:
 
-```text
+``` text
 park_hit_factor
 park_hr_factor
 temperature
@@ -554,19 +843,20 @@ roof_type
 roof_status
 ```
 
-Environment values must be captured before first pitch to be considered point-in-time safe.
+Environment values must be captured before first pitch to be considered
+point-in-time safe.
 
 ## 13.3 Feature Contract and Leakage Protection
 
 Feature eligibility is explicitly controlled by:
 
-```text
+``` text
 public.mlb_ml_batter_power_feature_contract
 ```
 
 Classifications include:
 
-```text
+``` text
 MODEL_FEATURE
 CANDIDATE
 INSUFFICIENT_HISTORY
@@ -576,21 +866,27 @@ LEAKAGE
 
 Interpretation:
 
-- **MODEL_FEATURE** — approved for model training/scoring.
-- **CANDIDATE** — available for research but not automatically assumed safe/useful.
-- **INSUFFICIENT_HISTORY** — conceptually useful but not yet supported by enough historical coverage.
-- **METADATA_ONLY** — descriptive/operational field, not a model input.
-- **LEAKAGE** — must not be used because it could reveal information unavailable at prediction time.
+-   **MODEL_FEATURE** --- approved for model training/scoring.
+-   **CANDIDATE** --- available for research but not automatically
+    assumed safe/useful.
+-   **INSUFFICIENT_HISTORY** --- conceptually useful but not yet
+    supported by enough historical coverage.
+-   **METADATA_ONLY** --- descriptive/operational field, not a model
+    input.
+-   **LEAKAGE** --- must not be used because it could reveal information
+    unavailable at prediction time.
 
-This contract is a core guardrail. A column existing in the feature table does **not** automatically mean it is a legal model feature.
+This contract is a core guardrail. A column existing in the feature
+table does **not** automatically mean it is a legal model feature.
 
 ## 13.4 Modeling Targets
 
-The shared power feature layer stores multiple labels so future experiments do not require rebuilding historical batter/game data.
+The shared power feature layer stores multiple labels so future
+experiments do not require rebuilding historical batter/game data.
 
 Relevant target columns include:
 
-```text
+``` text
 target_hit_1plus
 target_home_run_1plus
 target_total_bases_1plus
@@ -601,41 +897,46 @@ target_total_bases_4plus
 
 Current shadow models use only:
 
-```text
+``` text
 target_home_run_1plus
 target_total_bases_2plus
 ```
 
 ## 13.5 Phase 2 Model Development
 
-The initial power-model experiment used a frozen train/validation/test split so candidate selection could occur without repeatedly looking at the final test period.
+The initial power-model experiment used a frozen train/validation/test
+split so candidate selection could occur without repeatedly looking at
+the final test period.
 
 Experiment:
 
-```text
+``` text
 power_phase2_v1_20260810
 ```
 
 Candidate approaches included:
 
-- prevalence/intercept baseline
-- logistic regression
-- lightweight boosted stumps
-- Random Forest exploration
+-   prevalence/intercept baseline
+-   logistic regression
+-   lightweight boosted stumps
+-   Random Forest exploration
 
-Random Forest exploration exceeded the available Supabase Edge Function compute envelope. This was one reason daily power-model scoring was moved to GitHub/Python rather than coupling production scoring to Edge Function resource limits.
+Random Forest exploration exceeded the available Supabase Edge Function
+compute envelope. This was one reason daily power-model scoring was
+moved to GitHub/Python rather than coupling production scoring to Edge
+Function resource limits.
 
 ## 13.6 Selected Home Run Model
 
 Target:
 
-```text
+``` text
 home_run_1plus
 ```
 
 Initial registered candidate:
 
-```text
+``` text
 model_run_id = 112
 model_version = hr_v1_20260810213855
 algorithm = logistic_regression
@@ -643,65 +944,72 @@ algorithm = logistic_regression
 
 The scoring pipeline uses:
 
-1. numeric median imputation
-2. z-score normalization
-3. categorical one-hot encoding in the exact artifact feature order
-4. logistic-regression probability
-5. Platt calibration
+1.  numeric median imputation
+2.  z-score normalization
+3.  categorical one-hot encoding in the exact artifact feature order
+4.  logistic-regression probability
+5.  Platt calibration
 
-The GitHub scorer does **not** hard-code model coefficients. It loads the registered artifact and reproduces the preprocessing/scoring steps stored with that artifact.
+The GitHub scorer does **not** hard-code model coefficients. It loads
+the registered artifact and reproduces the preprocessing/scoring steps
+stored with that artifact.
 
 Initial held-out test metrics for the selected HR candidate:
 
-| Metric | Result |
-|---|---:|
-| Overall positive-rate baseline | 10.694% |
-| Brier score | 0.094789 |
-| Log loss | 0.335690 |
-| ROC AUC | 0.606799 |
-| PR AUC | 0.140957 |
-| Top 25 success rate | 16.0% |
-| Top 25 lift vs baseline | +5.306 percentage points |
+  Metric                                               Result
+  -------------------------------- --------------------------
+  Overall positive-rate baseline                      10.694%
+  Brier score                                        0.094789
+  Log loss                                           0.335690
+  ROC AUC                                            0.606799
+  PR AUC                                             0.140957
+  Top 25 success rate                                   16.0%
+  Top 25 lift vs baseline            +5.306 percentage points
 
-These metrics are research/test evidence, not a guarantee of future live performance. Promotion decisions should rely on accumulated shadow results.
+These metrics are research/test evidence, not a guarantee of future live
+performance. Promotion decisions should rely on accumulated shadow
+results.
 
 ## 13.7 Selected 2+ Total Bases Model
 
 Target:
 
-```text
+``` text
 total_bases_2plus
 ```
 
 Initial registered candidate:
 
-```text
+``` text
 model_run_id = 113
 model_version = tb2_v1_20260810213938
 algorithm = logistic_regression
 ```
 
-It uses the same artifact-driven preprocessing and Platt-calibration framework as the HR model.
+It uses the same artifact-driven preprocessing and Platt-calibration
+framework as the HR model.
 
 Initial held-out test metrics:
 
-| Metric | Result |
-|---|---:|
-| Overall positive-rate baseline | 31.9948% |
-| Brier score | 0.215126 |
-| Log loss | 0.620972 |
-| ROC AUC | 0.568903 |
-| PR AUC | 0.362681 |
-| Top 25 success rate | 38.222% |
-| Top 25 lift vs baseline | +6.227 percentage points |
+  Metric                                               Result
+  -------------------------------- --------------------------
+  Overall positive-rate baseline                     31.9948%
+  Brier score                                        0.215126
+  Log loss                                           0.620972
+  ROC AUC                                            0.568903
+  PR AUC                                             0.362681
+  Top 25 success rate                                 38.222%
+  Top 25 lift vs baseline            +6.227 percentage points
 
-Again, these are held-out experiment results. The live shadow scorecards are the operational source for deciding whether the model is stable enough to promote.
+Again, these are held-out experiment results. The live shadow scorecards
+are the operational source for deciding whether the model is stable
+enough to promote.
 
 ## 13.8 Model Registry and Artifacts
 
 Power-model development uses:
 
-```text
+``` text
 public.mlb_ml_model_runs
 public.mlb_ml_model_feature_importance
 public.mlb_ml_power_experiment_runs
@@ -712,48 +1020,63 @@ public.mlb_ml_power_model_artifacts
 
 Purpose:
 
-| Object | Purpose |
-|---|---|
-| `mlb_ml_model_runs` | Registered model/run metadata and current candidate/champion status |
-| `mlb_ml_model_feature_importance` | Stored model feature-importance metadata |
-| `mlb_ml_power_experiment_runs` | Experiment-level split/configuration metadata |
-| `mlb_ml_power_candidate_results` | Candidate validation/test metrics |
-| `mlb_ml_power_evaluation_predictions` | Stored validation/test predictions |
-| `mlb_ml_power_model_artifacts` | Preprocessing order, medians, scaling, coefficients, categorical maps, calibration parameters |
+  ---------------------------------------------------------------------------
+  Object                                  Purpose
+  --------------------------------------- -----------------------------------
+  `mlb_ml_model_runs`                     Registered model/run metadata and
+                                          current candidate/champion status
 
-The scorer should always resolve a registered model/artifact rather than copy coefficients into application code.
+  `mlb_ml_model_feature_importance`       Stored model feature-importance
+                                          metadata
+
+  `mlb_ml_power_experiment_runs`          Experiment-level
+                                          split/configuration metadata
+
+  `mlb_ml_power_candidate_results`        Candidate validation/test metrics
+
+  `mlb_ml_power_evaluation_predictions`   Stored validation/test predictions
+
+  `mlb_ml_power_model_artifacts`          Preprocessing order, medians,
+                                          scaling, coefficients, categorical
+                                          maps, calibration parameters
+  ---------------------------------------------------------------------------
+
+The scorer should always resolve a registered model/artifact rather than
+copy coefficients into application code.
 
 ## 13.9 Daily GitHub Scoring
 
 Scorer:
 
-```text
+``` text
 scripts/score_mlb_power_models.py
 ```
 
 Workflow:
 
-```text
+``` text
 .github/workflows/mlb-power-model-daily.yml
 ```
 
 Workflow name:
 
-```text
+``` text
 MLB Power Models - Daily Shadow Score
 ```
 
 Scheduled run:
 
-```text
+``` text
 12:15 UTC daily
 ```
 
-The scorer intentionally uses the Python standard library for the current logistic models. It recreates the stored Phase 2 transformations from artifact metadata.
+The scorer intentionally uses the Python standard library for the
+current logistic models. It recreates the stored Phase 2 transformations
+from artifact metadata.
 
 Daily flow:
 
-```text
+``` text
 Resolve registered model
         ↓
 Load model artifact
@@ -783,7 +1106,7 @@ Fail workflow if target is not COMPLETE
 
 Manual workflow controls include:
 
-```text
+``` text
 run_date
 target
 dry_run
@@ -792,7 +1115,7 @@ allow_after_start
 
 `target` can be:
 
-```text
+``` text
 all
 home_run_1plus
 total_bases_2plus
@@ -800,29 +1123,33 @@ total_bases_2plus
 
 ### Dry run safety
 
-A dry run calculates predictions and validations but writes nothing. It may run after first pitch because it cannot mutate production prediction rows.
+A dry run calculates predictions and validations but writes nothing. It
+may run after first pitch because it cannot mutate production prediction
+rows.
 
 ### Live-write pregame guard
 
-A normal same-day write is blocked after first pitch when game time is known unless the operator intentionally enables:
+A normal same-day write is blocked after first pitch when game time is
+known unless the operator intentionally enables:
 
-```text
+``` text
 allow_after_start = true
 ```
 
-That flag is recovery-only and should not be used as the normal daily path.
+That flag is recovery-only and should not be used as the normal daily
+path.
 
 ## 13.10 Generalized Prediction Table
 
 Daily HR/TB probabilities are stored in:
 
-```text
+``` text
 public.mlb_ml_batter_predictions
 ```
 
 The table is target-aware and can support:
 
-```text
+``` text
 hit_1plus
 home_run_1plus
 total_bases_2plus
@@ -832,7 +1159,7 @@ The current GitHub power scorer writes HR and 2+ TB.
 
 Important fields include:
 
-```text
+``` text
 prediction_run_date
 game_date
 game_pk
@@ -864,7 +1191,7 @@ prediction_created_at
 
 Uniqueness is enforced by:
 
-```text
+``` text
 prediction_run_date
 + target_name
 + game_pk
@@ -875,11 +1202,12 @@ This prevents duplicate player/game predictions for the same target.
 
 ## 13.11 Independent Database Validation
 
-The GitHub scorer is not allowed to declare its own output valid without a second check.
+The GitHub scorer is not allowed to declare its own output valid without
+a second check.
 
 Supabase validates prediction rows using:
 
-```text
+``` text
 public.validate_mlb_ml_batter_predictions(
     p_run_date date,
     p_target_name text
@@ -888,38 +1216,39 @@ public.validate_mlb_ml_batter_predictions(
 
 Validation checks include:
 
-- supported target
-- matching Phase 1 feature row
-- correct game/player
-- registered model run and model version
-- current feature version
-- batting-order consistency
-- pitcher consistency when available
-- probability between 0 and 1
-- duplicate prevention
-- pregame timing when game time is available
+-   supported target
+-   matching Phase 1 feature row
+-   correct game/player
+-   registered model run and model version
+-   current feature version
+-   batting-order consistency
+-   pitcher consistency when available
+-   probability between 0 and 1
+-   duplicate prevention
+-   pregame timing when game time is available
 
 Rows are marked:
 
-```text
+``` text
 quality_status = pass
 ```
 
 or:
 
-```text
+``` text
 quality_status = fail
 ```
 
 with detailed `quality_reasons`.
 
-This separation is intentional: scoring code and validation code are independent controls.
+This separation is intentional: scoring code and validation code are
+independent controls.
 
 ## 13.12 Ranking
 
 Ranking is created with:
 
-```text
+``` text
 public.rank_mlb_ml_batter_predictions(
     p_run_date date,
     p_target_name text
@@ -928,23 +1257,24 @@ public.rank_mlb_ml_batter_predictions(
 
 Ranks include:
 
-- `rank_overall`
-- `rank_team`
-- `rank_game`
+-   `rank_overall`
+-   `rank_team`
+-   `rank_game`
 
-The league-wide board uses `rank_overall`, with the UI showing the Top 25.
+The league-wide board uses `rank_overall`, with the UI showing the Top
+25.
 
 ## 13.13 Pipeline Status
 
 Operational completeness is recorded in:
 
-```text
+``` text
 public.mlb_ml_batter_pipeline_status
 ```
 
 Refreshed by:
 
-```text
+``` text
 public.refresh_mlb_ml_batter_pipeline_status(
     p_run_date date
 )
@@ -952,7 +1282,7 @@ public.refresh_mlb_ml_batter_pipeline_status(
 
 Possible states:
 
-```text
+``` text
 waiting_for_features
 waiting_for_predictions
 incomplete
@@ -962,23 +1292,24 @@ failed
 
 The status layer checks items such as:
 
-- expected player-games
-- prediction count
-- missing predictions
-- duplicates
-- invalid probabilities
-- missing/duplicate ranks
-- model-version mismatch
-- quality failures
-- evaluated rows
+-   expected player-games
+-   prediction count
+-   missing predictions
+-   duplicates
+-   invalid probabilities
+-   missing/duplicate ranks
+-   model-version mismatch
+-   quality failures
+-   evaluated rows
 
-The daily scorer is expected to fail if the requested target does not finish in `complete` status.
+The daily scorer is expected to fail if the requested target does not
+finish in `complete` status.
 
 ## 13.14 Actual Result Synchronization
 
 Actuals are loaded with:
 
-```text
+``` text
 public.sync_mlb_ml_batter_prediction_actuals(
     p_game_date date
 )
@@ -986,16 +1317,17 @@ public.sync_mlb_ml_batter_prediction_actuals(
 
 ### Home Run actual
 
-```text
+``` text
 actual_value = home_runs
 actual_binary = home_runs >= 1
 ```
 
 ### Total Bases actual
 
-The source game-log `hits` field already includes singles, doubles, triples, and home runs. Therefore total bases can be reconstructed as:
+The source game-log `hits` field already includes singles, doubles,
+triples, and home runs. Therefore total bases can be reconstructed as:
 
-```text
+``` text
 TB = hits
    + doubles
    + (2 × triples)
@@ -1004,54 +1336,55 @@ TB = hits
 
 Why this works:
 
-- every hit initially contributes 1 base through `hits`
-- a double needs one additional base
-- a triple needs two additional bases
-- a home run needs three additional bases
+-   every hit initially contributes 1 base through `hits`
+-   a double needs one additional base
+-   a triple needs two additional bases
+-   a home run needs three additional bases
 
 Equivalent standard formula:
 
-```text
+``` text
 TB = 1B + (2 × 2B) + (3 × 3B) + (4 × HR)
 ```
 
 For the 2+ TB target:
 
-```text
+``` text
 actual_binary = total_bases >= 2
 ```
 
-The synchronization is idempotent and is integrated into the existing next-morning MLB actual-finalization process.
+The synchronization is idempotent and is integrated into the existing
+next-morning MLB actual-finalization process.
 
 ## 13.15 Power Performance Scorecards
 
 Daily scorecard:
 
-```text
+``` text
 public.v_mlb_power_daily_scorecard
 ```
 
 Rolling scorecard:
 
-```text
+``` text
 public.v_mlb_power_rolling_scorecard
 ```
 
 Metrics include:
 
-- evaluated rows
-- overall daily baseline
-- Top 1 success rate
-- Top 5 success rate
-- Top 10 success rate
-- Top 25 success rate
-- lift versus baseline
-- Brier score
-- log loss
+-   evaluated rows
+-   overall daily baseline
+-   Top 1 success rate
+-   Top 5 success rate
+-   Top 10 success rate
+-   Top 25 success rate
+-   lift versus baseline
+-   Brier score
+-   log loss
 
 Rolling views include:
 
-```text
+``` text
 Last 7
 Last 14
 Last 30
@@ -1070,19 +1403,20 @@ The browser does **not** query `mlb_ml_batter_predictions` directly.
 
 The generalized frontend contract is:
 
-```text
+``` text
 public.v_mlb_batter_prediction_board
 ```
 
 backed by:
 
-```text
+``` text
 public.mlb_batter_prediction_board_cache
 ```
 
-The contract normalizes fields required by the outcome-aware MLB Hit Board, including:
+The contract normalizes fields required by the outcome-aware MLB Hit
+Board, including:
 
-```text
+``` text
 prediction_run_date
 game_date
 game_pk
@@ -1121,57 +1455,68 @@ cache_refreshed_at
 
 `deployment_status` communicates whether a target is Live or Shadow.
 
-`market_odds_supported` prevents the frontend from showing Hit-specific market odds while the user is viewing HR or 2+ TB unless the corresponding market has actually been ingested.
+`market_odds_supported` prevents the frontend from showing Hit-specific
+market odds while the user is viewing HR or 2+ TB unless the
+corresponding market has actually been ingested.
 
 ## 13.17 Frontend Outcome Logic
 
 The league-wide board uses one selector:
 
-```text
+``` text
 1+ Hit | 2+ Total Bases | Home Run
 ```
 
 ### 1+ Hit
 
-- keeps the existing V3 Hit serving behavior
-- remains Live
-- preserves Hit-specific confidence/explanation logic
-- preserves Hit-market odds where available
+-   keeps the existing V3 Hit serving behavior
+-   remains Live
+-   preserves Hit-specific confidence/explanation logic
+-   preserves Hit-market odds where available
 
 ### 2+ Total Bases
 
-- reads the generalized batter-prediction serving view
-- displays `2+ TB Probability`
-- is labeled Shadow
-- uses power-oriented contextual signals such as recent total bases, XBH, SLG, ISO, hard-hit rate, pitcher hard-hit allowed, and park context
-- does not display Hit-only odds
+-   reads the generalized batter-prediction serving view
+-   displays `2+ TB Probability`
+-   is labeled Shadow
+-   uses power-oriented contextual signals such as recent total bases,
+    XBH, SLG, ISO, hard-hit rate, pitcher hard-hit allowed, and park
+    context
+-   does not display Hit-only odds
 
 ### Home Run
 
-- reads the generalized batter-prediction serving view
-- displays `HR Probability`
-- is labeled Shadow
-- emphasizes HR form, ISO, barrel rate, hard-hit rate, pitcher barrel/hard-hit allowed, and HR park factor
-- does not display Hit-only odds
+-   reads the generalized batter-prediction serving view
+-   displays `HR Probability`
+-   is labeled Shadow
+-   emphasizes HR form, ISO, barrel rate, hard-hit rate, pitcher
+    barrel/hard-hit allowed, and HR park factor
+-   does not display Hit-only odds
 
-The HR/TB `Key Signal` UI is intentionally described as **contextual feature highlighting**, not causal feature attribution. It is not SHAP output.
+The HR/TB `Key Signal` UI is intentionally described as **contextual
+feature highlighting**, not causal feature attribution. It is not SHAP
+output.
 
 ## 13.18 Frontend Implementation
 
 The current rollout uses:
 
-```text
+``` text
 app-v4.js
 phase4b.js
 styles.css
 phase4b-layout-fix.css
 ```
 
-`phase4b.js` is loaded after `app-v4.js` and adds the target-aware behavior while preserving the stable V3 Hit implementation.
+`phase4b.js` is loaded after `app-v4.js` and adds the target-aware
+behavior while preserving the stable V3 Hit implementation.
 
-`phase4b-layout-fix.css` is loaded after `styles.css` and contains only targeted layout overrides for the new outcome/model/scope controls.
+`phase4b-layout-fix.css` is loaded after `styles.css` and contains only
+targeted layout overrides for the new outcome/model/scope controls.
 
-These files are intentionally separate during stabilization. After the feature has remained stable long enough, they can be consolidated into the primary JS/CSS files to reduce long-term repository complexity.
+These files are intentionally separate during stabilization. After the
+feature has remained stable long enough, they can be consolidated into
+the primary JS/CSS files to reduce long-term repository complexity.
 
 ## 13.19 Serving-Layer Security
 
@@ -1179,33 +1524,34 @@ The public browser path is intentionally restricted.
 
 ### Public cache
 
-```text
+``` text
 public.mlb_batter_prediction_board_cache
 ```
 
-- RLS enabled
-- `anon`: SELECT only
-- `authenticated`: SELECT only
-- no anonymous INSERT / UPDATE / DELETE
+-   RLS enabled
+-   `anon`: SELECT only
+-   `authenticated`: SELECT only
+-   no anonymous INSERT / UPDATE / DELETE
 
 ### Internal prediction table
 
-```text
+``` text
 public.mlb_ml_batter_predictions
 ```
 
-- RLS enabled
-- no anonymous SELECT
-- no anonymous INSERT / UPDATE / DELETE
-- service-role/backend access only
+-   RLS enabled
+-   no anonymous SELECT
+-   no anonymous INSERT / UPDATE / DELETE
+-   service-role/backend access only
 
-This prevents the browser from reading or mutating the internal model-output table directly.
+This prevents the browser from reading or mutating the internal
+model-output table directly.
 
 ## 13.20 Daily Operational Timing
 
 Current power pipeline ordering:
 
-```text
+``` text
 11:20 UTC  Environment refresh
     ↓
 11:45 UTC  Power feature refresh
@@ -1217,22 +1563,27 @@ Current power pipeline ordering:
 14:30 UTC  Catch-up serving-cache refresh
 ```
 
-The two cache refreshes are deliberate. The underlying model data is generated once per day, so every-15-minute cache rebuilds were unnecessary. The second daily refresh exists as a catch-up in case an upstream feature/scoring job is delayed.
+The two cache refreshes are deliberate. The underlying model data is
+generated once per day, so every-15-minute cache rebuilds were
+unnecessary. The second daily refresh exists as a catch-up in case an
+upstream feature/scoring job is delayed.
 
-The V3 Hit serving cache was also reduced from every 15 minutes to the same twice-daily pattern:
+The V3 Hit serving cache was also reduced from every 15 minutes to the
+same twice-daily pattern:
 
-```text
+``` text
 12:30 UTC
 14:30 UTC
 ```
 
 ## 13.21 Next-Morning Actuals and Evaluation
 
-The existing MLB actual-finalizer runs repeatedly the following morning and now also executes the power actual-sync/status refresh.
+The existing MLB actual-finalizer runs repeatedly the following morning
+and now also executes the power actual-sync/status refresh.
 
 Operational order:
 
-```text
+``` text
 Finalize prior-day MLB actuals
         ↓
 Sync HR/TB prediction actuals
@@ -1242,328 +1593,701 @@ Refresh power pipeline status
 Daily / rolling scorecards see evaluated rows
 ```
 
-The repeated finalizer cadence makes the process tolerant of late games or delayed game-log ingestion.
+The repeated finalizer cadence makes the process tolerant of late games
+or delayed game-log ingestion.
 
 ## 13.22 Shadow-Mode Promotion Philosophy
 
-Home Run and 2+ Total Bases should not be promoted merely because a held-out experiment looked promising.
+Home Run and 2+ Total Bases should not be promoted merely because a
+held-out experiment looked promising.
 
 A promotion decision should consider:
 
-- enough live evaluated days
-- Top 1 / Top 5 / Top 10 / Top 25 performance
-- lift versus the same-day baseline
-- calibration quality
-- Brier score / log loss
-- probability distribution stability
-- model/data drift
-- pipeline reliability
-- whether the model adds useful decision value beyond a simple baseline
+-   enough live evaluated days
+-   Top 1 / Top 5 / Top 10 / Top 25 performance
+-   lift versus the same-day baseline
+-   calibration quality
+-   Brier score / log loss
+-   probability distribution stability
+-   model/data drift
+-   pipeline reliability
+-   whether the model adds useful decision value beyond a simple
+    baseline
 
 Until that evidence is strong enough, the correct user-facing status is:
 
-```text
+``` text
 Shadow
 ```
 
----
+------------------------------------------------------------------------
 
-# Chapter 14 – GitHub Actions & Daily Workflow
+# Chapter 14 -- Pitcher Strikeout Model
 
-Daily ingestion, feature generation, prediction, actual loading, evaluation, and reporting workflow.
+Pitcher Strikeouts are modeled as a separate pitcher-prop architecture
+rather than forcing pitcher outcomes into the batter-model framework.
 
-# Chapter 15 – Platform Roadmap
+## 14.1 Modeling Philosophy
+
+The model predicts a **full strikeout distribution** rather than
+training a separate binary classifier for every sportsbook line.
+
+Conceptually:
+
+``` text
+Pitcher strikeout ability
+          ×
+Expected opportunity / workload
+          ↓
+Expected strikeouts + distribution
+          ↓
+P(K=0), P(K=1), ... P(K=12+)
+          ↓
+Probability Over / Under any supported market line
+```
+
+This design allows one model artifact to evaluate multiple sportsbook
+strikeout lines.
+
+## 14.2 Model / Market Separation
+
+Sportsbook prices are not used as model features.
+
+The model produces its own strikeout distribution. The market layer then
+compares the model-derived Over/Under probability with sportsbook
+pricing.
+
+This separation is intentional:
+
+``` text
+MODEL: baseball data → K distribution
+MARKET: sportsbook odds → paired no-vig probability
+COMPARISON: model probability - no-vig market probability = edge
+```
+
+## 14.3 Prediction Stages
+
+Pitcher K predictions support lineup-aware stages:
+
+-   **Preliminary** --- projected-lineup / pre-confirmation scoring
+-   **Final** --- confirmed-lineup rescoring when the required official
+    context is available
+
+The serving layer exposes stage and quality status so the UI can
+distinguish prediction maturity.
+
+## 14.4 Shadow Evaluation
+
+Pitcher Ks remain in **Shadow** while live performance, calibration,
+ranking quality, and promotion gates are evaluated.
+
+The architecture includes:
+
+-   compact pitcher feature rows
+-   model artifact / prediction storage
+-   actual strikeout loading
+-   daily and rolling performance evaluation
+-   promotion gates
+-   market/no-vig comparison
+-   official-lineup refresh / final rescoring
+-   live actuals
+-   public serving cache
+
+Raw historical pitch-level data should not be duplicated into Supabase
+when compact engineered feature rows are sufficient.
+
+## 14.5 Public Serving
+
+Pitcher K serving uses a browser-safe public cache and is also
+normalized into the unified Market Edge cache.
+
+Pitcher K user-facing rows can include:
+
+-   pitcher / team / opponent
+-   sportsbook line and side
+-   model probability
+-   expected / mean strikeouts
+-   paired no-vig market probability
+-   edge
+-   best price / sportsbook
+-   prediction stage
+-   quality status
+-   live strikeouts, outs, pitches, and batters faced where available
+
+------------------------------------------------------------------------
+
+# Chapter 15 -- Unified Market Edge
+
+Market Edge is the primary daily workspace and the canonical cross-prop
+user experience.
+
+## 15.1 Prop Types
+
+``` text
+All Props
+1+ Hit
+2+ TB
+Home Run
+Pitcher Ks
+```
+
+## 15.2 Ranking Modes
+
+### Edge Ranking
+
+Edge Ranking is intentionally strict.
+
+A row qualifies only when:
+
+``` text
+market_available = true
+AND market_probability_no_vig IS NOT NULL
+AND edge_probability IS NOT NULL
+AND edge_probability > 0
+```
+
+This prevents missing or one-sided sportsbook data from being presented
+as a false `0%` market or `0%` edge.
+
+### Model Probability
+
+Model Probability ranks by the model itself and does **not** require
+sportsbook coverage.
+
+This is especially important for markets such as Home Run where an odds
+provider may expose an Over price without a paired Under side.
+
+## 15.3 Odds and No-Vig Logic
+
+Supported batter market keys include:
+
+``` text
+batter_hits
+batter_total_bases
+batter_home_runs
+```
+
+Pitcher strikeouts use the pitcher-strikeout market path.
+
+For a paired Over/Under market:
+
+``` text
+raw_over_implied  = implied probability from Over odds
+raw_under_implied = implied probability from Under odds
+
+no_vig_over =
+    raw_over_implied
+    / (raw_over_implied + raw_under_implied)
+```
+
+The system can retain/display the best captured Over price and
+sportsbook even when a paired Under side is unavailable, but it must
+**not** fabricate no-vig Market Probability or Edge from a one-sided
+price.
+
+## 15.4 Odds Snapshot Timing
+
+The project intentionally uses **one scheduled odds snapshot per day**
+to conserve free-tier odds-provider usage.
+
+Because sportsbook player-prop publication timing varies:
+
+-   model probabilities may be available before sportsbook markets
+-   some markets may have only one side available
+-   later publication can improve Hit/TB/HR/Pitcher-K coverage
+-   the UI must remain useful in Model Probability mode even when market
+    coverage is incomplete
+
+The daily odds workflow should be scheduled late enough to capture
+useful prop coverage while remaining before the primary game slate
+whenever practical.
+
+## 15.5 Frontend Behavior
+
+The current Market Edge UI provides:
+
+-   Market Edge as the default landing page
+-   Model Performance as the second primary page
+-   Top 25 / Select Game scope
+-   Top 3 Model Plays or Top 3 Edge Plays
+-   MLB team logos
+-   handedness badges
+-   compact matchup labels
+-   highlighted top-ranked edge opportunity
+-   formatted sportsbook names
+-   best-odds display
+-   prop-aware detail drawer
+-   null-safe market rendering (`—`)
+-   responsive table behavior for desktop and iPad/mobile widths
+
+The legacy MLB Hit Board remains retained for rollback during
+stabilization but is hidden from primary navigation.
+
+------------------------------------------------------------------------
+
+# Chapter 16 -- GitHub Actions & Daily Workflow
+
+The daily operating architecture is orchestrated through GitHub Actions
+and Supabase serving refreshes.
+
+## Master Production Workflow
+
+The canonical automatic master is:
+
+``` text
+.github/workflows/daily-mlb-v3-production.yml
+```
+
+Its daily dependency graph coordinates the major production paths:
+
+``` text
+phase1
+ ├─ statcast
+ │   ├─ pitcher_k_actuals
+ │   └─ features
+ │       ├─ pitcher_k_features
+ │       │   └─ pitcher_k_shadow
+ │       ├─ v3_model
+ │       └─ power_models
+ └─ hit actuals
+     └─ v3_model
+
+v3_model + power_models
+        ↓
+    performance
+```
+
+The master workflow remains the sole automatic production orchestrator.
+Reusable component workflows should not independently duplicate the same
+daily schedule.
+
+## Market Odds Workflow
+
+The market loader supports:
+
+``` text
+batter_hits
+batter_total_bases
+batter_home_runs
+pitcher_strikeouts
+```
+
+The project intentionally uses **one scheduled market-odds run per day**
+because the odds provider is operated under free-tier usage constraints.
+
+The batter loader uses an atomic snapshot replacement path so
+provider/event/player/market/line/outcome identities are normalized and
+deduplicated consistently with the database.
+
+Market publication timing is an operational constraint. A successful
+workflow run does not guarantee every sportsbook has already published
+every prop or both sides of every market.
+
+## Unified Cache Refresh
+
+After model and market data are available, the serving layer refreshes:
+
+``` text
+public.mlb_market_edge_board_public_cache
+```
+
+The frontend reads this normalized cache rather than joining internal
+prediction and odds tables in the browser.
+
+## Operational Principle
+
+A daily run should fail loudly when a required pipeline prerequisite is
+missing, but incomplete sportsbook publication should be represented as
+**missing market data**, not as fabricated zero values.
+
+# Chapter 17 -- Platform Roadmap
 
 Near-term priorities:
 
-1. Increase the evaluated live-shadow sample for Home Run and 2+ Total Bases.
-2. Monitor HR/TB Top 1, Top 5, Top 10, and Top 25 lift versus same-day baseline.
-3. Continue improving V3 Hit and power-model probability calibration.
-4. Add automated model-drift and feature-health monitoring.
-5. Strengthen player-level explainability while clearly separating contextual signals from causal attribution.
-6. Continue improving weather, park, Statcast, and pitch-arsenal context.
-7. Improve model artifact durability and reproducibility.
-8. Add automated UI and pipeline smoke tests for all three MLB Hit Board outcomes.
-9. Continue reducing operational failure points in the daily prediction workflow.
-10. Review V1 and V2 strictly as Hit benchmarks unless a future research need justifies reactivation.
-11. Keep V3-C retired unless a new controlled experiment demonstrates meaningful incremental value.
-12. Consolidate `phase4b.js` / `phase4b-layout-fix.css` into the primary frontend files after the outcome-aware UI has remained stable.
-13. Continue removing obsolete historical compatibility objects that are no longer referenced.
+1.  Stabilize the unified Market Edge experience across all four prop
+    types.
+2.  Validate the daily odds snapshot and resulting Hit / TB / HR /
+    Pitcher-K market coverage.
+3.  Continue collecting live-shadow samples for Home Run, 2+ Total
+    Bases, and Pitcher Ks.
+4.  Monitor Top 1 / Top 5 / Top 10 / Top 25 lift, calibration, and
+    model-vs-market performance.
+5.  Keep Edge Ranking strict: valid paired no-vig market + positive edge
+    only.
+6.  Continue improving V3 Hit and shadow-model probability calibration.
+7.  Add automated model-drift, feature-health, serving-cache, and UI
+    smoke tests.
+8.  Strengthen player-level explainability while separating contextual
+    signals from causal attribution.
+9.  Continue improving weather, park, Statcast, pitch-arsenal, lineup,
+    and workload context.
+10. Improve model artifact durability and reproducibility.
+11. Keep V1 and V2 as historical Hit benchmarks unless a new research
+    need justifies reactivation.
+12. Keep V3-C retired unless a controlled experiment demonstrates
+    meaningful incremental value.
+13. After the new Market Edge pages remain stable, remove legacy Market
+    Edge ownership/interception from `app-v4.js`.
+14. After stabilization, retire unnecessary legacy MLB Hit Board
+    startup/runtime behavior while relying on Git history for rollback.
+15. Consolidate the unified prop-aware detail experience and remove
+    duplicate legacy drawer behavior.
+16. Continue removing obsolete compatibility objects only after
+    dependencies are documented and verified.
 
-**Completed architecture cleanup:** Reds-specific workflows, scripts, and team-specific logic/code have been removed. New development is all-MLB only.
+**Completed architecture cleanup:** Reds-specific workflows, scripts,
+and team-specific runtime logic have been removed. New development is
+all-MLB only.
 
-No standalone V1 or V2 recommendation UI is currently planned.
+**Current stabilization policy:** do not begin broad legacy-code removal
+until the new Market Edge and Model Performance pages have been verified
+under normal daily operation.
 
+# Chapter 18 -- Current Deep Technical Reference
 
-Weather, park factors, SHAP explainability, automated feature importance, additional Statcast metrics, and ensemble models.
+Feature glossary, feature catalog, supporting reference material,
+implementation notes, and the detailed V3 Hit architecture follow below.
 
-# Chapter 16 – Current Deep Technical Reference
-
-Feature glossary, feature catalog, supporting reference material, implementation notes, and the detailed V3 Hit architecture follow below.
-
----
+------------------------------------------------------------------------
 
 # Current Deep Technical Reference
 
-> **Scope note:** the deep technical material below originated as V3 Hit documentation. It remains authoritative for the V3 Hit path unless superseded by the current-state chapters above. Home Run / 2+ Total Bases use the separate generalized power-model architecture documented in Chapter 13. Historical Reds-specific runtime logic and V3-C are retired.
+> **Scope note:** the deep technical material below originated as V3 Hit
+> documentation. It remains authoritative for the V3 Hit path unless
+> superseded by the current-state chapters above. Home Run / 2+ Total
+> Bases use the separate generalized power-model architecture documented
+> in Chapter 13. Historical Reds-specific runtime logic and V3-C are
+> retired.
 
-> This section contains the detailed architecture, feature, pipeline, evaluation, database, and operational documentation for the active V3 Hit platform. Individual historical notes inside this section should be treated according to their version labels.
+> This section contains the detailed architecture, feature, pipeline,
+> evaluation, database, and operational documentation for the active V3
+> Hit platform. Individual historical notes inside this section should
+> be treated according to their version labels.
 
-The remainder of this document preserves the original detailed implementation notes for historical reference.
-
+The remainder of this document preserves the original detailed
+implementation notes for historical reference.
 
 # MLB Hit Lab --- V3 ML Model Deep Technical Architecture
 
 # Table of Contents
 
-- [MLB Hit Lab --- V3 ML Model Deep Technical Architecture](#mlb-hit-lab-----v3-ml-model-deep-technical-architecture)
-- [Version History](#version-history)
-  - [1. Executive Summary](#1-executive-summary)
-- [](#)
-- [2. Architecture at a Glance](#2-architecture-at-a-glance)
-  - [3. Main Source Files](#3-main-source-files)
-  - [3.1 Python training/scoring script](#31-python-trainingscoring-script)
-  - [3.2 Python dependencies](#32-python-dependencies)
-  - [3.3 V3 model workflow](#33-v3-model-workflow)
-  - [3.4 V3 actuals workflow](#34-v3-actuals-workflow)
-  - [4. Runtime Configuration](#4-runtime-configuration)
-  - [4.1 Required](#41-required)
-  - [4.2 Optional](#42-optional)
-  - [5. Model Target](#5-model-target)
-  - [6. Feature Architecture](#6-feature-architecture)
-  - [6.1 Numeric feature bases](#61-numeric-feature-bases)
-  - [6.2 Categorical features](#62-categorical-features)
-  - [6.3 Full feature list pattern](#63-full-feature-list-pattern)
-  - [6.4 Why wide-window architecture matters](#64-why-wide-window-architecture-matters)
-  - [7. Data Validation and Cleaning](#7-data-validation-and-cleaning)
-  - [7.1 Duplicate player-game validation](#71-duplicate-player-game-validation)
-  - [7.2 Required feature validation](#72-required-feature-validation)
-  - [7.3 Training data coercion](#73-training-data-coercion)
-  - [8. Time-Based Train/Validation Split](#8-time-based-trainvalidation-split)
-  - [9. scikit-learn Pipeline Architecture](#9-scikit-learn-pipeline-architecture)
-  - [9.1 Numeric preprocessing for linear model](#91-numeric-preprocessing-for-linear-model)
-  - [9.2 Numeric preprocessing for tree models](#92-numeric-preprocessing-for-tree-models)
-  - [9.3 Categorical preprocessing](#93-categorical-preprocessing)
-  - [9.4 Linear preprocessor](#94-linear-preprocessor)
-  - [9.5 Tree preprocessor](#95-tree-preprocessor)
-  - [10. Candidate Models](#10-candidate-models)
-  - [10.1 Logistic Regression](#101-logistic-regression)
-  - [10.2 Random Forest](#102-random-forest)
-  - [10.3 Histogram Gradient Boosting](#103-histogram-gradient-boosting)
-  - [11. Candidate Model Evaluation](#11-candidate-model-evaluation)
-  - [11.1 Standard ML metrics](#111-standard-ml-metrics)
-  - [11.2 Top-N baseball metrics](#112-top-n-baseball-metrics)
-  - [12. Model Selection Rule](#12-model-selection-rule)
-  - [12.1 Why this rule makes sense](#121-why-this-rule-makes-sense)
-  - [13. Latest Supabase Registry Snapshot](#13-latest-supabase-registry-snapshot)
-  - [14. Model Artifact Serialization](#14-model-artifact-serialization)
-  - [15. Model Registration](#15-model-registration)
-  - [15.1 Hyperparameters saved to registry](#151-hyperparameters-saved-to-registry)
-  - [16. Daily Scoring / Inference](#16-daily-scoring--inference)
-  - [17. Prediction Output Contract](#17-prediction-output-contract)
-  - [18. Confidence Buckets](#18-confidence-buckets)
-  - [19. Explanation Generation](#19-explanation-generation)
-  - [19.1 Recent form factor](#191-recent-form-factor)
-  - [19.2 Batter split factor](#192-batter-split-factor)
-  - [19.3 Pitcher split factor](#193-pitcher-split-factor)
-  - [19.4 Pitcher WHIP factor](#194-pitcher-whip-factor)
-  - [19.5 Explanation text construction](#195-explanation-text-construction)
-  - [20. Feature Payload Construction](#20-feature-payload-construction)
-  - [20.1 Backward-compatible aliases](#201-backward-compatible-aliases)
-  - [20.2 Extra payload fields](#202-extra-payload-fields)
-  - [21. GitHub Actions: V3 Model Run](#21-github-actions-v3-model-run)
-  - [21.1 Triggers](#211-triggers)
-  - [21.2 Runtime](#212-runtime)
-  - [21.3 Previous actuals validation](#213-previous-actuals-validation)
-  - [21.4 Feature freshness validation](#214-feature-freshness-validation)
-  - [21.5 Train and score step](#215-train-and-score-step)
-  - [21.6 Prediction write validation](#216-prediction-write-validation)
-  - [21.7 Activation](#217-activation)
-  - [22. GitHub Actions: V3 Actuals Loading](#22-github-actions-v3-actuals-loading)
-  - [22.1 Triggers](#221-triggers)
-  - [22.2 Manual inputs](#222-manual-inputs)
-  - [22.3 Preflight coverage](#223-preflight-coverage)
-  - [22.4 Actuals loader](#224-actuals-loader)
-  - [22.5 Coverage validation](#225-coverage-validation)
-  - [23. Supabase Database Architecture](#23-supabase-database-architecture)
-  - [23.1 Training views](#231-training-views)
-  - [23.2 Scoring views](#232-scoring-views)
-  - [23.3 Model registry table/view](#233-model-registry-tableview)
-  - [23.4 Prediction table](#234-prediction-table)
-  - [23.5 Active prediction view](#235-active-prediction-view)
-  - [23.6 Actuals loader/status](#236-actuals-loaderstatus)
-  - [23.7 Performance and calibration views](#237-performance-and-calibration-views)
-  - [23.8 App cache](#238-app-cache)
-  - [24. Current Production Data Snapshot](#24-current-production-data-snapshot)
-  - [25. Training Health Snapshot](#25-training-health-snapshot)
-  - [26. Scoring Health Snapshot](#26-scoring-health-snapshot)
-  - [27. Model Performance Interpretation](#27-model-performance-interpretation)
-  - [27.1 Probability quality](#271-probability-quality)
-  - [27.2 Ranking quality](#272-ranking-quality)
-  - [28. Why Logistic Regression Is Winning](#28-why-logistic-regression-is-winning)
-  - [29. Risks and Current Gaps](#29-risks-and-current-gaps)
-  - [29.1 Candidate status vs production status](#291-candidate-status-vs-production-status)
-  - [29.2 Artifact durability](#292-artifact-durability)
-  - [29.3 Hyperparameter persistence](#293-hyperparameter-persistence)
-  - [29.4 No explicit feature schema hash](#294-no-explicit-feature-schema-hash)
-  - [29.5 Limited evaluated sample](#295-limited-evaluated-sample)
-  - [29.6 No explicit probability calibration layer](#296-no-explicit-probability-calibration-layer)
-  - [30. Recommended Next Engineering Improvements](#30-recommended-next-engineering-improvements)
-  - [30.1 Persist full sklearn config](#301-persist-full-sklearn-config)
-  - [30.2 Add champion table](#302-add-champion-table)
-  - [30.3 Upload artifacts durably](#303-upload-artifacts-durably)
-  - [30.4 Add git metadata](#304-add-git-metadata)
-  - [30.5 Add drift monitoring](#305-add-drift-monitoring)
-  - [30.6 Add model comparison dashboard](#306-add-model-comparison-dashboard)
-  - [31. Operational Runbook](#31-operational-runbook)
-  - [31.1 Normal daily flow](#311-normal-daily-flow)
-  - [31.2 Manual V3 model run](#312-manual-v3-model-run)
-  - [31.3 Manual V3 actuals load](#313-manual-v3-actuals-load)
-  - [31.4 Key health queries](#314-key-health-queries)
-  - [32. Bottom Line](#32-bottom-line)
-  - [15. July 2026 Production Hardening Updates](#15-july-2026-production-hardening-updates)
-- [16. Daily Scoring / Inference](#16-daily-scoring--inference)
-  - [17. Prediction Output Contract](#17-prediction-output-contract)
-  - [18. Confidence Buckets](#18-confidence-buckets)
-  - [19. Explanation Generation](#19-explanation-generation)
-  - [19.1 Recent form factor](#191-recent-form-factor)
-  - [19.2 Batter split factor](#192-batter-split-factor)
-  - [19.3 Pitcher split factor](#193-pitcher-split-factor)
-  - [19.4 Pitcher WHIP factor](#194-pitcher-whip-factor)
-  - [19.5 Explanation text construction](#195-explanation-text-construction)
-  - [20. Feature Payload Construction](#20-feature-payload-construction)
-  - [20.1 Backward-compatible aliases](#201-backward-compatible-aliases)
-  - [20.2 Extra payload fields](#202-extra-payload-fields)
-  - [21. GitHub Actions: V3 Model Run](#21-github-actions-v3-model-run)
-  - [21.1 Triggers](#211-triggers)
-  - [21.2 Runtime](#212-runtime)
-  - [21.3 Previous actuals validation](#213-previous-actuals-validation)
-  - [21.4 Feature freshness validation](#214-feature-freshness-validation)
-  - [21.5 Train and score step](#215-train-and-score-step)
-  - [21.6 Prediction write validation](#216-prediction-write-validation)
-  - [21.7 Activation](#217-activation)
-  - [22. GitHub Actions: V3 Actuals Loading](#22-github-actions-v3-actuals-loading)
-  - [22.1 Triggers](#221-triggers)
-  - [22.2 Manual inputs](#222-manual-inputs)
-  - [22.3 Preflight coverage](#223-preflight-coverage)
-  - [22.4 Actuals loader](#224-actuals-loader)
-  - [22.5 Coverage validation](#225-coverage-validation)
-  - [23. Supabase Database Architecture](#23-supabase-database-architecture)
-  - [23.1 Training views](#231-training-views)
-  - [23.2 Scoring views](#232-scoring-views)
-  - [23.3 Model registry table/view](#233-model-registry-tableview)
-  - [23.4 Prediction table](#234-prediction-table)
-  - [23.5 Active prediction view](#235-active-prediction-view)
-  - [23.6 Actuals loader/status](#236-actuals-loaderstatus)
-  - [23.7 Performance and calibration views](#237-performance-and-calibration-views)
-  - [23.8 App cache](#238-app-cache)
-  - [24. Current Production Data Snapshot](#24-current-production-data-snapshot)
-  - [25. Training Health Snapshot](#25-training-health-snapshot)
-  - [26. Scoring Health Snapshot](#26-scoring-health-snapshot)
-  - [27. Model Performance Interpretation](#27-model-performance-interpretation)
-  - [27.1 Probability quality](#271-probability-quality)
-  - [27.2 Ranking quality](#272-ranking-quality)
-  - [28. Why Logistic Regression Is Winning](#28-why-logistic-regression-is-winning)
-  - [29. Risks and Current Gaps](#29-risks-and-current-gaps)
-  - [29.1 Candidate status vs production status](#291-candidate-status-vs-production-status)
-  - [29.2 Artifact durability](#292-artifact-durability)
-  - [29.3 Hyperparameter persistence](#293-hyperparameter-persistence)
-  - [29.4 No explicit feature schema hash](#294-no-explicit-feature-schema-hash)
-  - [29.5 Limited evaluated sample](#295-limited-evaluated-sample)
-  - [29.6 No explicit probability calibration layer](#296-no-explicit-probability-calibration-layer)
-  - [30. Recommended Next Engineering Improvements](#30-recommended-next-engineering-improvements)
-  - [30.1 Persist full sklearn config](#301-persist-full-sklearn-config)
-  - [30.2 Add champion table](#302-add-champion-table)
-  - [30.3 Upload artifacts durably](#303-upload-artifacts-durably)
-  - [30.4 Add git metadata](#304-add-git-metadata)
-  - [30.5 Add drift monitoring](#305-add-drift-monitoring)
-  - [30.6 Add model comparison dashboard](#306-add-model-comparison-dashboard)
-  - [31. Operational Runbook](#31-operational-runbook)
-  - [31.1 Normal daily flow](#311-normal-daily-flow)
-  - [31.2 Manual V3 model run](#312-manual-v3-model-run)
-  - [31.3 Manual V3 actuals load](#313-manual-v3-actuals-load)
-  - [31.4 Key health queries](#314-key-health-queries)
-  - [32. Bottom Line](#32-bottom-line)
-  - [15. July 2026 Production Hardening Updates](#15-july-2026-production-hardening-updates)
-- [16. V3 Explainability Engine (Feature-Family Diagnostics)](#16-v3-explainability-engine-feature-family-diagnostics)
-  - [Purpose](#purpose)
-  - [Architecture](#architecture)
-  - [Diagnostic Output](#diagnostic-output)
-  - [Miguel Vargas Validation](#miguel-vargas-validation)
-  - [Future Enhancement](#future-enhancement)
-
+-   [MLB Hit Lab --- V3 ML Model Deep Technical
+    Architecture](#mlb-hit-lab-----v3-ml-model-deep-technical-architecture)
+-   [Version History](#version-history)
+    -   [1. Executive Summary](#1-executive-summary)
+-   [](#)
+-   [2. Architecture at a Glance](#2-architecture-at-a-glance)
+    -   [3. Main Source Files](#3-main-source-files)
+    -   [3.1 Python training/scoring
+        script](#31-python-trainingscoring-script)
+    -   [3.2 Python dependencies](#32-python-dependencies)
+    -   [3.3 V3 model workflow](#33-v3-model-workflow)
+    -   [3.4 V3 actuals workflow](#34-v3-actuals-workflow)
+    -   [4. Runtime Configuration](#4-runtime-configuration)
+    -   [4.1 Required](#41-required)
+    -   [4.2 Optional](#42-optional)
+    -   [5. Model Target](#5-model-target)
+    -   [6. Feature Architecture](#6-feature-architecture)
+    -   [6.1 Numeric feature bases](#61-numeric-feature-bases)
+    -   [6.2 Categorical features](#62-categorical-features)
+    -   [6.3 Full feature list pattern](#63-full-feature-list-pattern)
+    -   [6.4 Why wide-window architecture
+        matters](#64-why-wide-window-architecture-matters)
+    -   [7. Data Validation and
+        Cleaning](#7-data-validation-and-cleaning)
+    -   [7.1 Duplicate player-game
+        validation](#71-duplicate-player-game-validation)
+    -   [7.2 Required feature
+        validation](#72-required-feature-validation)
+    -   [7.3 Training data coercion](#73-training-data-coercion)
+    -   [8. Time-Based Train/Validation
+        Split](#8-time-based-trainvalidation-split)
+    -   [9. scikit-learn Pipeline
+        Architecture](#9-scikit-learn-pipeline-architecture)
+    -   [9.1 Numeric preprocessing for linear
+        model](#91-numeric-preprocessing-for-linear-model)
+    -   [9.2 Numeric preprocessing for tree
+        models](#92-numeric-preprocessing-for-tree-models)
+    -   [9.3 Categorical preprocessing](#93-categorical-preprocessing)
+    -   [9.4 Linear preprocessor](#94-linear-preprocessor)
+    -   [9.5 Tree preprocessor](#95-tree-preprocessor)
+    -   [10. Candidate Models](#10-candidate-models)
+    -   [10.1 Logistic Regression](#101-logistic-regression)
+    -   [10.2 Random Forest](#102-random-forest)
+    -   [10.3 Histogram Gradient
+        Boosting](#103-histogram-gradient-boosting)
+    -   [11. Candidate Model Evaluation](#11-candidate-model-evaluation)
+    -   [11.1 Standard ML metrics](#111-standard-ml-metrics)
+    -   [11.2 Top-N baseball metrics](#112-top-n-baseball-metrics)
+    -   [12. Model Selection Rule](#12-model-selection-rule)
+    -   [12.1 Why this rule makes sense](#121-why-this-rule-makes-sense)
+    -   [13. Latest Supabase Registry
+        Snapshot](#13-latest-supabase-registry-snapshot)
+    -   [14. Model Artifact
+        Serialization](#14-model-artifact-serialization)
+    -   [15. Model Registration](#15-model-registration)
+    -   [15.1 Hyperparameters saved to
+        registry](#151-hyperparameters-saved-to-registry)
+    -   [16. Daily Scoring / Inference](#16-daily-scoring--inference)
+    -   [17. Prediction Output Contract](#17-prediction-output-contract)
+    -   [18. Confidence Buckets](#18-confidence-buckets)
+    -   [19. Explanation Generation](#19-explanation-generation)
+    -   [19.1 Recent form factor](#191-recent-form-factor)
+    -   [19.2 Batter split factor](#192-batter-split-factor)
+    -   [19.3 Pitcher split factor](#193-pitcher-split-factor)
+    -   [19.4 Pitcher WHIP factor](#194-pitcher-whip-factor)
+    -   [19.5 Explanation text
+        construction](#195-explanation-text-construction)
+    -   [20. Feature Payload
+        Construction](#20-feature-payload-construction)
+    -   [20.1 Backward-compatible
+        aliases](#201-backward-compatible-aliases)
+    -   [20.2 Extra payload fields](#202-extra-payload-fields)
+    -   [21. GitHub Actions: V3 Model
+        Run](#21-github-actions-v3-model-run)
+    -   [21.1 Triggers](#211-triggers)
+    -   [21.2 Runtime](#212-runtime)
+    -   [21.3 Previous actuals
+        validation](#213-previous-actuals-validation)
+    -   [21.4 Feature freshness
+        validation](#214-feature-freshness-validation)
+    -   [21.5 Train and score step](#215-train-and-score-step)
+    -   [21.6 Prediction write
+        validation](#216-prediction-write-validation)
+    -   [21.7 Activation](#217-activation)
+    -   [22. GitHub Actions: V3 Actuals
+        Loading](#22-github-actions-v3-actuals-loading)
+    -   [22.1 Triggers](#221-triggers)
+    -   [22.2 Manual inputs](#222-manual-inputs)
+    -   [22.3 Preflight coverage](#223-preflight-coverage)
+    -   [22.4 Actuals loader](#224-actuals-loader)
+    -   [22.5 Coverage validation](#225-coverage-validation)
+    -   [23. Supabase Database
+        Architecture](#23-supabase-database-architecture)
+    -   [23.1 Training views](#231-training-views)
+    -   [23.2 Scoring views](#232-scoring-views)
+    -   [23.3 Model registry table/view](#233-model-registry-tableview)
+    -   [23.4 Prediction table](#234-prediction-table)
+    -   [23.5 Active prediction view](#235-active-prediction-view)
+    -   [23.6 Actuals loader/status](#236-actuals-loaderstatus)
+    -   [23.7 Performance and calibration
+        views](#237-performance-and-calibration-views)
+    -   [23.8 App cache](#238-app-cache)
+    -   [24. Current Production Data
+        Snapshot](#24-current-production-data-snapshot)
+    -   [25. Training Health Snapshot](#25-training-health-snapshot)
+    -   [26. Scoring Health Snapshot](#26-scoring-health-snapshot)
+    -   [27. Model Performance
+        Interpretation](#27-model-performance-interpretation)
+    -   [27.1 Probability quality](#271-probability-quality)
+    -   [27.2 Ranking quality](#272-ranking-quality)
+    -   [28. Why Logistic Regression Is
+        Winning](#28-why-logistic-regression-is-winning)
+    -   [29. Risks and Current Gaps](#29-risks-and-current-gaps)
+    -   [29.1 Candidate status vs production
+        status](#291-candidate-status-vs-production-status)
+    -   [29.2 Artifact durability](#292-artifact-durability)
+    -   [29.3 Hyperparameter
+        persistence](#293-hyperparameter-persistence)
+    -   [29.4 No explicit feature schema
+        hash](#294-no-explicit-feature-schema-hash)
+    -   [29.5 Limited evaluated sample](#295-limited-evaluated-sample)
+    -   [29.6 No explicit probability calibration
+        layer](#296-no-explicit-probability-calibration-layer)
+    -   [30. Recommended Next Engineering
+        Improvements](#30-recommended-next-engineering-improvements)
+    -   [30.1 Persist full sklearn
+        config](#301-persist-full-sklearn-config)
+    -   [30.2 Add champion table](#302-add-champion-table)
+    -   [30.3 Upload artifacts durably](#303-upload-artifacts-durably)
+    -   [30.4 Add git metadata](#304-add-git-metadata)
+    -   [30.5 Add drift monitoring](#305-add-drift-monitoring)
+    -   [30.6 Add model comparison
+        dashboard](#306-add-model-comparison-dashboard)
+    -   [31. Operational Runbook](#31-operational-runbook)
+    -   [31.1 Normal daily flow](#311-normal-daily-flow)
+    -   [31.2 Manual V3 model run](#312-manual-v3-model-run)
+    -   [31.3 Manual V3 actuals load](#313-manual-v3-actuals-load)
+    -   [31.4 Key health queries](#314-key-health-queries)
+    -   [32. Bottom Line](#32-bottom-line)
+    -   [15. July 2026 Production Hardening
+        Updates](#15-july-2026-production-hardening-updates)
+-   [16. Daily Scoring / Inference](#16-daily-scoring--inference)
+    -   [17. Prediction Output Contract](#17-prediction-output-contract)
+    -   [18. Confidence Buckets](#18-confidence-buckets)
+    -   [19. Explanation Generation](#19-explanation-generation)
+    -   [19.1 Recent form factor](#191-recent-form-factor)
+    -   [19.2 Batter split factor](#192-batter-split-factor)
+    -   [19.3 Pitcher split factor](#193-pitcher-split-factor)
+    -   [19.4 Pitcher WHIP factor](#194-pitcher-whip-factor)
+    -   [19.5 Explanation text
+        construction](#195-explanation-text-construction)
+    -   [20. Feature Payload
+        Construction](#20-feature-payload-construction)
+    -   [20.1 Backward-compatible
+        aliases](#201-backward-compatible-aliases)
+    -   [20.2 Extra payload fields](#202-extra-payload-fields)
+    -   [21. GitHub Actions: V3 Model
+        Run](#21-github-actions-v3-model-run)
+    -   [21.1 Triggers](#211-triggers)
+    -   [21.2 Runtime](#212-runtime)
+    -   [21.3 Previous actuals
+        validation](#213-previous-actuals-validation)
+    -   [21.4 Feature freshness
+        validation](#214-feature-freshness-validation)
+    -   [21.5 Train and score step](#215-train-and-score-step)
+    -   [21.6 Prediction write
+        validation](#216-prediction-write-validation)
+    -   [21.7 Activation](#217-activation)
+    -   [22. GitHub Actions: V3 Actuals
+        Loading](#22-github-actions-v3-actuals-loading)
+    -   [22.1 Triggers](#221-triggers)
+    -   [22.2 Manual inputs](#222-manual-inputs)
+    -   [22.3 Preflight coverage](#223-preflight-coverage)
+    -   [22.4 Actuals loader](#224-actuals-loader)
+    -   [22.5 Coverage validation](#225-coverage-validation)
+    -   [23. Supabase Database
+        Architecture](#23-supabase-database-architecture)
+    -   [23.1 Training views](#231-training-views)
+    -   [23.2 Scoring views](#232-scoring-views)
+    -   [23.3 Model registry table/view](#233-model-registry-tableview)
+    -   [23.4 Prediction table](#234-prediction-table)
+    -   [23.5 Active prediction view](#235-active-prediction-view)
+    -   [23.6 Actuals loader/status](#236-actuals-loaderstatus)
+    -   [23.7 Performance and calibration
+        views](#237-performance-and-calibration-views)
+    -   [23.8 App cache](#238-app-cache)
+    -   [24. Current Production Data
+        Snapshot](#24-current-production-data-snapshot)
+    -   [25. Training Health Snapshot](#25-training-health-snapshot)
+    -   [26. Scoring Health Snapshot](#26-scoring-health-snapshot)
+    -   [27. Model Performance
+        Interpretation](#27-model-performance-interpretation)
+    -   [27.1 Probability quality](#271-probability-quality)
+    -   [27.2 Ranking quality](#272-ranking-quality)
+    -   [28. Why Logistic Regression Is
+        Winning](#28-why-logistic-regression-is-winning)
+    -   [29. Risks and Current Gaps](#29-risks-and-current-gaps)
+    -   [29.1 Candidate status vs production
+        status](#291-candidate-status-vs-production-status)
+    -   [29.2 Artifact durability](#292-artifact-durability)
+    -   [29.3 Hyperparameter
+        persistence](#293-hyperparameter-persistence)
+    -   [29.4 No explicit feature schema
+        hash](#294-no-explicit-feature-schema-hash)
+    -   [29.5 Limited evaluated sample](#295-limited-evaluated-sample)
+    -   [29.6 No explicit probability calibration
+        layer](#296-no-explicit-probability-calibration-layer)
+    -   [30. Recommended Next Engineering
+        Improvements](#30-recommended-next-engineering-improvements)
+    -   [30.1 Persist full sklearn
+        config](#301-persist-full-sklearn-config)
+    -   [30.2 Add champion table](#302-add-champion-table)
+    -   [30.3 Upload artifacts durably](#303-upload-artifacts-durably)
+    -   [30.4 Add git metadata](#304-add-git-metadata)
+    -   [30.5 Add drift monitoring](#305-add-drift-monitoring)
+    -   [30.6 Add model comparison
+        dashboard](#306-add-model-comparison-dashboard)
+    -   [31. Operational Runbook](#31-operational-runbook)
+    -   [31.1 Normal daily flow](#311-normal-daily-flow)
+    -   [31.2 Manual V3 model run](#312-manual-v3-model-run)
+    -   [31.3 Manual V3 actuals load](#313-manual-v3-actuals-load)
+    -   [31.4 Key health queries](#314-key-health-queries)
+    -   [32. Bottom Line](#32-bottom-line)
+    -   [15. July 2026 Production Hardening
+        Updates](#15-july-2026-production-hardening-updates)
+-   [16. V3 Explainability Engine (Feature-Family
+    Diagnostics)](#16-v3-explainability-engine-feature-family-diagnostics)
+    -   [Purpose](#purpose)
+    -   [Architecture](#architecture)
+    -   [Diagnostic Output](#diagnostic-output)
+    -   [Miguel Vargas Validation](#miguel-vargas-validation)
+    -   [Future Enhancement](#future-enhancement)
 
 # Version History
 
-  -----------------------------------------------------------------------
-  Version                    Date              Summary
-  -------------------------- ----------------- --------------------------
-  **V3.0.0**                 Initial Release   Initial production release
-                                               of the V3 machine learning
-                                               hit prediction model.
+-   **2026-09-08** --- Market Edge became the default cross-prop
+    workspace; added unified Hit/TB/HR/Pitcher-K serving, strict no-vig
+    Edge Ranking semantics, Pitcher K architecture, and updated
+    frontend/odds operating model.
 
-  **V3.0.1**                 July 2026         **DNP Evaluation Fix** --
-                                               Updated model evaluation
-                                               logic so players who Did
-                                               Not Play (DNP) are
-                                               excluded from model
-                                               scoring and performance
-                                               metrics. Aligns V1, V2,
-                                               and V3 evaluation
-                                               methodology while leaving
-                                               prediction generation
-                                               unchanged.
+      -----------------------------------------------------------------------
+      Version                    Date              Summary
+      -------------------------- ----------------- --------------------------
+      **V3.0.0**                 Initial Release   Initial production release
+                                                   of the V3 machine learning
+                                                   hit prediction model.
 
-  **V3.0.2**                 July 2026         **Ineligible Player
-                                               Filtering** -- Added
-                                               automated roster snapshot
-                                               filtering to exclude
-                                               players on the Injured
-                                               List (IL) and other
-                                               ineligible roster statuses
-                                               from daily prediction
-                                               generation.
+      **V3.0.1**                 July 2026         **DNP Evaluation Fix** --
+                                                   Updated model evaluation
+                                                   logic so players who Did
+                                                   Not Play (DNP) are
+                                                   excluded from model
+                                                   scoring and performance
+                                                   metrics. Aligns V1, V2,
+                                                   and V3 evaluation
+                                                   methodology while leaving
+                                                   prediction generation
+                                                   unchanged.
 
-  **V3.0.3**                 July 2026         **Small Sample Pitcher
-                                               Stabilization** -- Added
-                                               reliability-weighted
-                                               stabilization for opposing
-                                               pitcher metrics (BAA,
-                                               WHIP, ERA, vulnerability,
-                                               recent form, and matchup
-                                               score) to prevent
-                                               extremely small pitching
-                                               samples from
-                                               disproportionately
-                                               influencing hitter
-                                               rankings.
+      **V3.0.2**                 July 2026         **Ineligible Player
+                                                   Filtering** -- Added
+                                                   automated roster snapshot
+                                                   filtering to exclude
+                                                   players on the Injured
+                                                   List (IL) and other
+                                                   ineligible roster statuses
+                                                   from daily prediction
+                                                   generation.
 
-  **V3.1.0**                 July 2026         **Team Hit Board** --
-                                               Replaced the Reds-only Hit
-                                               Board with a generic
-                                               selected-game experience
-                                               supporting every scheduled
-                                               MLB matchup, both teams,
-                                               both starting pitchers,
-                                               handedness splits, and the
-                                               shared V3 serving cache.
-  
-  **Platform 4B**              August 2026       **Outcome-Aware MLB Hit Board** --
-                                               Added 1+ Hit, 2+ Total Bases,
-                                               and Home Run outcome selection;
-                                               generalized HR/TB serving cache,
-                                               target-aware player details,
-                                               shadow performance monitoring,
-                                               and power-model security controls.
-                                               Reds-specific runtime workflows,
-                                               scripts, and logic were removed.
-                                               V3-C was discontinued because it
-                                               did not provide enough incremental
-                                               value to justify parallel-model
-                                               operational complexity.
-  -----------------------------------------------------------------------
+      **V3.0.3**                 July 2026         **Small Sample Pitcher
+                                                   Stabilization** -- Added
+                                                   reliability-weighted
+                                                   stabilization for opposing
+                                                   pitcher metrics (BAA,
+                                                   WHIP, ERA, vulnerability,
+                                                   recent form, and matchup
+                                                   score) to prevent
+                                                   extremely small pitching
+                                                   samples from
+                                                   disproportionately
+                                                   influencing hitter
+                                                   rankings.
 
-> **Current status:** the migration from Reds-specific runtime logic is complete. Reds-only workflows, scripts, and team-specific logic/code have been removed; the historical entry above is retained only to document the application's evolution.
+      **V3.1.0**                 July 2026         **Team Hit Board** --
+                                                   Replaced the Reds-only Hit
+                                                   Board with a generic
+                                                   selected-game experience
+                                                   supporting every scheduled
+                                                   MLB matchup, both teams,
+                                                   both starting pitchers,
+                                                   handedness splits, and the
+                                                   shared V3 serving cache.
+
+      **Platform 4B**            August 2026       **Outcome-Aware MLB Hit
+                                                   Board** -- Added 1+ Hit,
+                                                   2+ Total Bases, and Home
+                                                   Run outcome selection;
+                                                   generalized HR/TB serving
+                                                   cache, target-aware player
+                                                   details, shadow
+                                                   performance monitoring,
+                                                   and power-model security
+                                                   controls. Reds-specific
+                                                   runtime workflows,
+                                                   scripts, and logic were
+                                                   removed. V3-C was
+                                                   discontinued because it
+                                                   did not provide enough
+                                                   incremental value to
+                                                   justify parallel-model
+                                                   operational complexity.
+      -----------------------------------------------------------------------
+
+> **Current status:** the migration from Reds-specific runtime logic is
+> complete. Reds-only workflows, scripts, and team-specific logic/code
+> have been removed; the historical entry above is retained only to
+> document the application's evolution.
 
 *Last rebuilt from live Supabase metadata and GitHub Python
 implementation inspection.*
@@ -1616,31 +2340,18 @@ Supabase/PostgreSQL
 
 ------------------------------------------------------------------------
 
-#
+# 
 
-**V3.0.4**                 July 2026         **Batter Reliability
-                                             Stabilization** -- Added
-                                             hierarchical batter
-                                             reliability using trailing
-                                             MLB plate appearances,
-                                             stabilized player priors,
-                                             and league priors to
-                                             prevent small-sample
-                                             hitters from dominating
-                                             predictions while
-                                             preserving established
-                                             veterans early in a season.
+**V3.0.4** July 2026 **Batter Reliability Stabilization** -- Added
+hierarchical batter reliability using trailing MLB plate appearances,
+stabilized player priors, and league priors to prevent small-sample
+hitters from dominating predictions while preserving established
+veterans early in a season.
 
-**V3.0.5**                 July 2026         **Hierarchical Pitcher
-                                             Priors** -- Replaced
-                                             league-average-only pitcher
-                                             stabilization with
-                                             pitcher-specific
-                                             historical priors that
-                                             transition smoothly into
-                                             current-season
-                                             performance, improving
-                                             Opening Day stability.
+**V3.0.5** July 2026 **Hierarchical Pitcher Priors** -- Replaced
+league-average-only pitcher stabilization with pitcher-specific
+historical priors that transition smoothly into current-season
+performance, improving Opening Day stability.
 
 # 2. Architecture at a Glance
 
@@ -2383,52 +3094,52 @@ The AUC tiebreaker keeps general ranking quality in the equation.
 
 From live Supabase inspection, the latest model registry entry showed:
 
-  ----------------------------------------------------------------------------------------------------------
-  Field                               Value
-  ----------------------------------- ----------------------------------------------------------------------
-  Model run ID                        `11`
+  ----------------------------------------------------------------------------------------------
+  Field                   Value
+  ----------------------- ----------------------------------------------------------------------
+  Model run ID            `11`
 
-  Model family                        `v3_ml`
+  Model family            `v3_ml`
 
-  Target                              `hit_1plus`
+  Target                  `hit_1plus`
 
-  Selected model                      `logistic_regression`
+  Selected model          `logistic_regression`
 
-  Model version                       `v3_hit_20260709_154445`
+  Model version           `v3_hit_20260709_154445`
 
-  Status                              `candidate`
+  Status                  `candidate`
 
-  Trained at                          `2026-07-09 15:45:14 UTC`
+  Trained at              `2026-07-09 15:45:14 UTC`
 
-  Training start                      `2026-05-22`
+  Training start          `2026-05-22`
 
-  Training end                        `2026-07-01`
+  Training end            `2026-07-01`
 
-  Validation start                    `2026-07-02`
+  Validation start        `2026-07-02`
 
-  Validation end                      `2026-07-08`
+  Validation end          `2026-07-08`
 
-  Feature count                       `82`
+  Feature count           `82`
 
-  Artifact URI                        `artifacts/mlb_v3/v3_hit_20260709_154445_logistic_regression.joblib`
-  ----------------------------------------------------------------------------------------------------------
+  Artifact URI            `artifacts/mlb_v3/v3_hit_20260709_154445_logistic_regression.joblib`
+  ----------------------------------------------------------------------------------------------
 
 Latest candidate comparison:
 
-  ------------------------------------------------------------------------------------
-  Candidate     ROC AUC Log Loss    Brier    Top 1    Top 5   Top 10   Top 20   Top 25
-                                    Score                                     
-  ------------ -------- -------- -------- -------- -------- -------- -------- --------
-  Logistic       0.5910   0.6792   0.2429    71.4%    71.4%    74.3%    70.7%    70.3%
-  Regression                                                                  
+  -------------------------------------------------------------------------------
+  Candidate     ROC AUC Log Loss    Brier   Top 1   Top 5  Top 10  Top 20  Top 25
+                                    Score                                 
+  ------------ -------- -------- -------- ------- ------- ------- ------- -------
+  Logistic       0.5910 0.6792     0.2429   71.4%   71.4%   74.3%   70.7%   70.3%
+  Regression                                                              
 
-  Random         0.5714   0.6836   0.2451    42.9%    74.3%    64.3%    67.9%    67.4%
-  Forest                                                                      
+  Random         0.5714 0.6836     0.2451   42.9%   74.3%   64.3%   67.9%   67.4%
+  Forest                                                                  
 
-  Histogram      0.5519   0.7019   0.2524    57.1%    62.9%    65.7%    67.1%    65.7%
-  Gradient                                                                    
-  Boosting                                                                    
-  ------------------------------------------------------------------------------------
+  Histogram      0.5519 0.7019     0.2524   57.1%   62.9%   65.7%   67.1%   65.7%
+  Gradient                                                                
+  Boosting                                                                
+  -------------------------------------------------------------------------------
 
 Interpretation:
 
@@ -2724,17 +3435,17 @@ pitcher_baa, pitcher_baa_window = first_available_window_value(row, "pitcher_baa
 
 Rules:
 
-  ------------------------------------------------------------------------
-  Condition                Direction               Text
-  ------------------------ ----------------------- -----------------------
-  `pitcher_baa >= 0.270`   Positive                Opposing pitcher allows
-                                                   a high batting average
-                                                   in this split.
+  ----------------------------------------------------------------------
+  Condition                Direction              Text
+  ------------------------ ---------------------- ----------------------
+  `pitcher_baa >= 0.270`   Positive               Opposing pitcher
+                                                  allows a high batting
+                                                  average in this split.
 
-  `pitcher_baa < 0.220`    Negative                Opposing pitcher split
-                                                   is tougher than
-                                                   average.
-  ------------------------------------------------------------------------
+  `pitcher_baa < 0.220`    Negative               Opposing pitcher split
+                                                  is tougher than
+                                                  average.
+  ----------------------------------------------------------------------
 
 ## 19.4 Pitcher WHIP factor
 
@@ -3207,20 +3918,20 @@ From live Supabase inspection:
 
 Daily prediction/evaluation status:
 
-  --------------------------------------------------------------------------------------
-  Prediction         Rows   Evaluated       Hits   Evaluated           Min           Max
-  Date                           Rows               Hit Rate   Probability   Probability
-  ------------ ---------- ----------- ---------- ----------- ------------- -------------
-  2026-07-05          396         303        178       58.7%         12.5%         84.6%
+  ----------------------------------------------------------------------------------
+  Prediction       Rows   Evaluated     Hits   Evaluated           Min           Max
+  Date                         Rows             Hit Rate   Probability   Probability
+  ------------ -------- ----------- -------- ----------- ------------- -------------
+  2026-07-05        396         303      178       58.7%         12.5%         84.6%
 
-  2026-07-06          430         324        190       58.6%         11.7%         73.0%
+  2026-07-06        430         324      190       58.6%         11.7%         73.0%
 
-  2026-07-07          792         598        360       60.2%         11.2%         71.8%
+  2026-07-07        792         598      360       60.2%         11.2%         71.8%
 
-  2026-07-08          760         560        318       56.8%         13.2%         72.5%
+  2026-07-08        760         560      318       56.8%         13.2%         72.5%
 
-  2026-07-09          981           0          0     Pending          9.9%         76.1%
-  --------------------------------------------------------------------------------------
+  2026-07-09        981           0        0     Pending          9.9%         76.1%
+  ----------------------------------------------------------------------------------
 
 ------------------------------------------------------------------------
 
@@ -3643,15 +4354,16 @@ change. Only post-game evaluation metrics are corrected.
 ------------------------------------------------------------------------
 
 ### 
+
 15.2 Hierarchical Reliability Framework
 
 #### Background
 
 V3 originally stabilized only opposing pitcher statistics when seasonal
-samples became extremely small. Beginning with V3.0.4 and V3.0.5 this was
-expanded into a unified hierarchical reliability framework that protects
-both pitchers and hitters from small-sample volatility while preserving
-expected behavior for established MLB players.
+samples became extremely small. Beginning with V3.0.4 and V3.0.5 this
+was expanded into a unified hierarchical reliability framework that
+protects both pitchers and hitters from small-sample volatility while
+preserving expected behavior for established MLB players.
 
 ### 15.2.1 Pitcher Reliability
 
@@ -3675,10 +4387,10 @@ performance naturally dominates.
 
 Benefits:
 
-- Better Opening Day behavior.
-- Veterans retain meaningful prior information.
-- Rookies remain conservatively estimated.
-- Recent five-start volatility remains controlled.
+-   Better Opening Day behavior.
+-   Veterans retain meaningful prior information.
+-   Rookies remain conservatively estimated.
+-   Recent five-start volatility remains controlled.
 
 ### 15.2.2 Batter Reliability
 
@@ -3690,10 +4402,10 @@ appear much stronger than the available MLB evidence supports.
 
 V3 constructs a player-specific prior using:
 
-- Trailing 365-day MLB plate appearances.
-- Discounted MLB plate appearances from days 366-730.
-- Stabilized personal hit-game rate.
-- League hit-rate prior.
+-   Trailing 365-day MLB plate appearances.
+-   Discounted MLB plate appearances from days 366-730.
+-   Stabilized personal hit-game rate.
+-   League hit-rate prior.
 
 Conceptually:
 
@@ -3705,10 +4417,10 @@ Reliability increases continuously with effective MLB plate appearances.
 
 Benefits:
 
-- Prevents recent AAA call-ups from dominating the Top 25.
-- Preserves established veterans early each season.
-- Avoids harsh Opening Day resets.
-- Maintains continuous rather than threshold-based behavior.
+-   Prevents recent AAA call-ups from dominating the Top 25.
+-   Preserves established veterans early each season.
+-   Avoids harsh Opening Day resets.
+-   Maintains continuous rather than threshold-based behavior.
 
 The feature contracts exposed to downstream Python scoring remain
 unchanged. Reliability adjustments occur during feature engineering, so
@@ -3889,17 +4601,17 @@ pitcher_baa, pitcher_baa_window = first_available_window_value(row, "pitcher_baa
 
 Rules:
 
-  ------------------------------------------------------------------------
-  Condition                Direction               Text
-  ------------------------ ----------------------- -----------------------
-  `pitcher_baa >= 0.270`   Positive                Opposing pitcher allows
-                                                   a high batting average
-                                                   in this split.
+  ----------------------------------------------------------------------
+  Condition                Direction              Text
+  ------------------------ ---------------------- ----------------------
+  `pitcher_baa >= 0.270`   Positive               Opposing pitcher
+                                                  allows a high batting
+                                                  average in this split.
 
-  `pitcher_baa < 0.220`    Negative                Opposing pitcher split
-                                                   is tougher than
-                                                   average.
-  ------------------------------------------------------------------------
+  `pitcher_baa < 0.220`    Negative               Opposing pitcher split
+                                                  is tougher than
+                                                  average.
+  ----------------------------------------------------------------------
 
 ## 19.4 Pitcher WHIP factor
 
@@ -4372,20 +5084,20 @@ From live Supabase inspection:
 
 Daily prediction/evaluation status:
 
-  --------------------------------------------------------------------------------------
-  Prediction         Rows   Evaluated       Hits   Evaluated           Min           Max
-  Date                           Rows               Hit Rate   Probability   Probability
-  ------------ ---------- ----------- ---------- ----------- ------------- -------------
-  2026-07-05          396         303        178       58.7%         12.5%         84.6%
+  ----------------------------------------------------------------------------------
+  Prediction       Rows   Evaluated     Hits   Evaluated           Min           Max
+  Date                         Rows             Hit Rate   Probability   Probability
+  ------------ -------- ----------- -------- ----------- ------------- -------------
+  2026-07-05        396         303      178       58.7%         12.5%         84.6%
 
-  2026-07-06          430         324        190       58.6%         11.7%         73.0%
+  2026-07-06        430         324      190       58.6%         11.7%         73.0%
 
-  2026-07-07          792         598        360       60.2%         11.2%         71.8%
+  2026-07-07        792         598      360       60.2%         11.2%         71.8%
 
-  2026-07-08          760         560        318       56.8%         13.2%         72.5%
+  2026-07-08        760         560      318       56.8%         13.2%         72.5%
 
-  2026-07-09          981           0          0     Pending          9.9%         76.1%
-  --------------------------------------------------------------------------------------
+  2026-07-09        981           0        0     Pending          9.9%         76.1%
+  ----------------------------------------------------------------------------------
 
 ------------------------------------------------------------------------
 
@@ -4964,15 +5676,21 @@ A future enhancement will compute exact model-level feature attribution
 expose quantitative feature contributions rather than diagnostic feature
 families.
 
----
+------------------------------------------------------------------------
 
 # Statcast Contact Quality & Pitch Arsenal Architecture
 
 ## Overview
 
-The V3 model was enhanced with a new Statcast feature layer that augments—rather than replaces—the existing rolling-window feature engineering. Traditional features identify who has performed well recently; the Statcast layer estimates *why* a hitter is likely (or unlikely) to succeed in today's specific matchup.
+The V3 model was enhanced with a new Statcast feature layer that
+augments---rather than replaces---the existing rolling-window feature
+engineering. Traditional features identify who has performed well
+recently; the Statcast layer estimates *why* a hitter is likely (or
+unlikely) to succeed in today's specific matchup.
 
-The enhancement expanded the feature set from **82 features** to **110 features** by adding contact-quality metrics, engineered interaction features, and pitch-arsenal matchup features.
+The enhancement expanded the feature set from **82 features** to **110
+features** by adding contact-quality metrics, engineered interaction
+features, and pitch-arsenal matchup features.
 
 ## Design Philosophy
 
@@ -4980,13 +5698,17 @@ Traditional statistics answer **"What happened?"**
 
 Statcast attempts to answer **"What should have happened?"**
 
-Pitch arsenal analysis attempts to answer **"What is likely to happen today?"**
+Pitch arsenal analysis attempts to answer **"What is likely to happen
+today?"**
 
-The objective is to estimate which hitters have the highest probability of recording at least one hit today using recent form, historical splits, expected contact quality, and the projected pitch mix they will face.
+The objective is to estimate which hitters have the highest probability
+of recording at least one hit today using recent form, historical
+splits, expected contact quality, and the projected pitch mix they will
+face.
 
 ## Architecture
 
-```text
+``` text
 Historical Game Data
         │
         ▼
@@ -5010,114 +5732,129 @@ Machine Learning Model
 
 ## Batter Contact Features
 
-- batter_contact_bbe
-- batter_hard_hit_rate
-- batter_barrel_rate
-- batter_xba
-- batter_xwoba_contact
+-   batter_contact_bbe
+-   batter_hard_hit_rate
+-   batter_barrel_rate
+-   batter_xba
+-   batter_xwoba_contact
 
 ## Pitcher Contact Features
 
-- pitcher_contact_bbe
-- pitcher_hard_hit_rate_allowed
-- pitcher_barrel_rate_allowed
-- pitcher_xba_allowed
-- pitcher_xwoba_contact_allowed
+-   pitcher_contact_bbe
+-   pitcher_hard_hit_rate_allowed
+-   pitcher_barrel_rate_allowed
+-   pitcher_xba_allowed
+-   pitcher_xwoba_contact_allowed
 
 ## Engineered Contact Features
 
-- **hard_hit_collision** – interaction between hitter hard-hit ability and pitcher hard-hit suppression.
-- **barrel_collision** – interaction between hitter barrel rate and pitcher barrel rate allowed.
-- **xba_matchup** – batter xBA minus pitcher xBA allowed.
-- **contact_quality_edge** – composite expected contact advantage.
+-   **hard_hit_collision** -- interaction between hitter hard-hit
+    ability and pitcher hard-hit suppression.
+-   **barrel_collision** -- interaction between hitter barrel rate and
+    pitcher barrel rate allowed.
+-   **xba_matchup** -- batter xBA minus pitcher xBA allowed.
+-   **contact_quality_edge** -- composite expected contact advantage.
 
 ## Pitch Arsenal Features
 
-The model evaluates the projected pitch mix for today's pitcher and weights hitter performance accordingly.
+The model evaluates the projected pitch mix for today's pitcher and
+weights hitter performance accordingly.
 
 Key features include:
 
-- arsenal_weighted_batter_xba
-- arsenal_weighted_batter_xwoba
-- arsenal_weighted_batter_whiff_rate
-- arsenal_weighted_pitcher_xba_allowed
-- arsenal_weighted_pitcher_whiff_rate
-- arsenal_xba_edge
-- arsenal_whiff_risk
-- arsenal_coverage_pct
-- arsenal_matched_pitch_types
+-   arsenal_weighted_batter_xba
+-   arsenal_weighted_batter_xwoba
+-   arsenal_weighted_batter_whiff_rate
+-   arsenal_weighted_pitcher_xba_allowed
+-   arsenal_weighted_pitcher_whiff_rate
+-   arsenal_xba_edge
+-   arsenal_whiff_risk
+-   arsenal_coverage_pct
+-   arsenal_matched_pitch_types
 
 Availability flags:
 
-- contact_feature_available
-- arsenal_feature_available
+-   contact_feature_available
+-   arsenal_feature_available
 
 Additional context features:
 
-- batter_bats
-- pitcher_throws
-- effective_batter_side
+-   batter_bats
+-   pitcher_throws
+-   effective_batter_side
 
 ## Validation Results
 
-Using identical training and validation windows, adding the Statcast layer improved overall probability quality while producing the largest gains among the highest-confidence predictions.
+Using identical training and validation windows, adding the Statcast
+layer improved overall probability quality while producing the largest
+gains among the highest-confidence predictions.
 
-| Metric | Original (82) | Statcast (110) |
-|---|---:|---:|
-| ROC AUC | 0.5664 | **0.5681** |
-| Log Loss | 0.6868 | **0.6839** |
-| Brier Score | 0.2466 | **0.2452** |
-| Top 1 | 71.4% | **85.7%** |
-| Top 5 | 65.7% | **77.1%** |
-| Top 10 | **68.6%** | 67.1% |
-| Top 20 | **64.3%** | 62.9% |
-| Top 25 | 61.7% | **62.3%** |
+  Metric          Original (82)   Statcast (110)
+  ------------- --------------- ----------------
+  ROC AUC                0.5664       **0.5681**
+  Log Loss               0.6868       **0.6839**
+  Brier Score            0.2466       **0.2452**
+  Top 1                   71.4%        **85.7%**
+  Top 5                   65.7%        **77.1%**
+  Top 10              **68.6%**            67.1%
+  Top 20              **64.3%**            62.9%
+  Top 25                  61.7%        **62.3%**
 
 ## Current Limitations
 
 The current implementation does not yet model:
 
-- Exit velocity trends
-- Launch angle trends
-- Sprint speed
-- Weather adjustments
-- Park factors
-- Umpire tendencies
-- Defensive positioning
-- SHAP/permutation feature importance
+-   Exit velocity trends
+-   Launch angle trends
+-   Sprint speed
+-   Weather adjustments
+-   Park factors
+-   Umpire tendencies
+-   Defensive positioning
+-   SHAP/permutation feature importance
 
 ## Future Roadmap
 
 Potential future enhancements include:
 
-- SHAP explainability
-- Automated feature importance reporting
-- Park-adjusted contact quality
-- Weather-aware predictions
-- Pitch movement and tunneling metrics
-- Rolling Statcast trend features
-- Ensemble modeling
+-   SHAP explainability
+-   Automated feature importance reporting
+-   Park-adjusted contact quality
+-   Weather-aware predictions
+-   Pitch movement and tunneling metrics
+-   Rolling Statcast trend features
+-   Ensemble modeling
 
-This enhancement establishes the foundation for future context-aware matchup modeling while preserving compatibility with existing V3 training records, prediction contracts, and selected supporting feature sources.
+This enhancement establishes the foundation for future context-aware
+matchup modeling while preserving compatibility with existing V3
+training records, prediction contracts, and selected supporting feature
+sources.
 
----
+------------------------------------------------------------------------
 
-# Chapter 17 – Historical Reference
+# Chapter 19 -- Historical Reference
 
-> **Historical reference only.** Material identified as superseded, retired, original, or legacy documents prior implementations and may not reflect the active production UI or workflow.
+> **Historical reference only.** Material identified as superseded,
+> retired, original, or legacy documents prior implementations and may
+> not reflect the active production UI or workflow.
 
 Historical material is retained to support:
 
-- model-performance comparison
-- auditability
-- architecture decisions
-- rollback research
-- understanding the evolution from deterministic scoring to V3 ML probabilities
+-   model-performance comparison
+-   auditability
+-   architecture decisions
+-   rollback research
+-   understanding the evolution from deterministic scoring to V3 ML
+    probabilities
 
-When historical documentation conflicts with the current product-state sections at the top of this file, the current product-state sections take precedence.
+When historical documentation conflicts with the current product-state
+sections at the top of this file, the current product-state sections
+take precedence.
 
 ## Current Source of Truth
 
 The active direction is:
 
-> **V3 is the production recommendation model. V1 and V2 are benchmarks, historical references, and—where explicitly documented—supporting context.**
+> **V3 is the production recommendation model. V1 and V2 are benchmarks,
+> historical references, and---where explicitly documented---supporting
+> context.**
