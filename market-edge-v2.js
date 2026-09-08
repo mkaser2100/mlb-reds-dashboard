@@ -10,7 +10,7 @@
 (() => {
   "use strict";
 
-  const BUILD = "phase9b-market-edge-v2-20260908a";
+  const BUILD = "phase9b-market-edge-v2-20260908b";
   const CACHE_TABLE = "mlb_market_edge_board_public_cache";
   const STORAGE_KEY = "marketEdgeV2State";
 
@@ -24,8 +24,8 @@
 
   const TYPE_TO_KEY = {
     hit_1plus: "hit",
-    tb_2plus: "tb",
-    hr_1plus: "hr",
+    total_bases_2plus: "tb",
+    home_run_1plus: "hr",
     pitcher_strikeouts: "pitcher_k"
   };
 
@@ -553,23 +553,38 @@
     el("mev2DetailBackdrop")?.classList.remove("open");
   }
 
+  function activateMarketView() {
+    document.querySelectorAll(".nav-item").forEach(button => {
+      button.classList.toggle("active", button.dataset.view === "market");
+    });
+    document.querySelectorAll(".view").forEach(view => view.classList.remove("active-view"));
+    el("marketEdgeView")?.classList.add("active-view");
+    setPageCopy();
+
+    if (!state.rows.length && !state.loading) fetchLatestRows();
+    else render();
+  }
+
   function interceptMarketView() {
     const marketButton = document.querySelector('.nav-item[data-view="market"]');
-    marketButton?.addEventListener("click", () => {
-      requestAnimationFrame(() => {
-        setPageCopy();
-        if (!state.rows.length && !state.loading) fetchLatestRows();
-        else render();
-      });
-    });
+
+    // app-v4 owns the legacy Market Edge loader. Capture this click before its
+    // bubble handler so the legacy request cannot race and overwrite V2.
+    marketButton?.addEventListener("click", event => {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      activateMarketView();
+    }, true);
 
     const refresh = el("refreshButton");
-    refresh?.addEventListener("click", () => {
-      if (el("marketEdgeView")?.classList.contains("active-view")) {
-        setTimeout(fetchLatestRows, 0);
-      }
-    });
+    refresh?.addEventListener("click", event => {
+      if (!el("marketEdgeView")?.classList.contains("active-view")) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      fetchLatestRows();
+    }, true);
 
+    // Fallback protection if another script changes the active view directly.
     const observer = new MutationObserver(() => {
       if (el("marketEdgeView")?.classList.contains("active-view")) {
         setPageCopy();
