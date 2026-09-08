@@ -10,7 +10,7 @@
 (() => {
   "use strict";
 
-  const BUILD = "phase9b-market-edge-v2-20260908e";
+  const BUILD = "phase9b-market-edge-v2-20260908f";
   const CACHE_TABLE = "mlb_market_edge_board_public_cache";
   const STORAGE_KEY = "marketEdgeV2State";
 
@@ -109,6 +109,38 @@
     const team = teamAbbr(row.team_name);
     const opp = teamAbbr(row.opponent_team_name);
     return team && opp ? `${team} vs ${opp}` : (row.game_label || "");
+  }
+
+  function teamLogoUrl(teamId) {
+    const id = num(teamId);
+    return id == null ? "" : `https://www.mlbstatic.com/team-logos/${Math.round(id)}.svg`;
+  }
+
+  function propShort(row) {
+    const key = TYPE_TO_KEY[row.prop_type];
+    if (key === "hit") return "1+ Hit";
+    if (key === "tb") return "2+ TB";
+    if (key === "hr") return "Home Run";
+    if (key === "pitcher_k") return row.prop_label || "Pitcher Ks";
+    return row.prop_label || row.prop_type || "Prop";
+  }
+
+  function signalLabel(row) {
+    const key = TYPE_TO_KEY[row.prop_type];
+    if (state.ranking === "edge") return "Market Edge";
+    if (key === "hit") return "Hit Model";
+    if (key === "tb") return "TB Model";
+    if (key === "hr") return "HR Model";
+    if (key === "pitcher_k") return "K Model";
+    return "Model";
+  }
+
+  function signalIcon(row) {
+    const key = TYPE_TO_KEY[row.prop_type];
+    if (state.ranking === "edge") return "⚡";
+    if (key === "hr") return "🔥";
+    if (key === "pitcher_k") return "K";
+    return "◆";
   }
 
   function loadSavedState() {
@@ -316,17 +348,22 @@
 
   function summaryHtml(rows) {
     const top = rows.slice(0, 3);
+    const summaryTitle = state.ranking === "edge" ? "Top 3 Edge Plays" : "Top 3 Model Plays";
+    const summaryCopy = state.ranking === "edge"
+      ? "Highest positive model-vs-market edges with paired no-vig pricing."
+      : "Highest model probabilities in the active view.";
     return `
       <section class="mev2-summary">
-        <div class="mev2-section-heading">
-          <div>
-            <div class="mev2-kicker">DAILY SUMMARY</div>
-            <h2>Top 3 Opportunities</h2>
-            <p>${state.ranking === "edge"
-              ? "Highest model-vs-market edges with paired no-vig pricing."
-              : "Highest model probabilities in the active view."}</p>
+        <div class="mev2-summary-header">
+          <div class="mev2-summary-title-wrap">
+            <div class="mev2-summary-trophy" aria-hidden="true">🏆</div>
+            <div>
+              <div class="mev2-kicker">DAILY SUMMARY</div>
+              <h2>${summaryTitle}</h2>
+              <p>${summaryCopy}</p>
+            </div>
           </div>
-          <span class="mev2-count">${top.length}/3</span>
+          <span class="mev2-count">👥 ${top.length} plays</span>
         </div>
         <div class="mev2-summary-grid">
           ${top.length ? top.map((row, i) => summaryCard(row, i)).join("") :
@@ -336,18 +373,30 @@
   }
 
   function summaryCard(row, index) {
+    const logo = teamLogoUrl(row.team_id);
+    const metric = state.ranking === "edge" ? pct(row.edge_probability, true) : pct(row.model_probability);
+    const metricLabel = state.ranking === "edge" ? "EDGE" : "MODEL";
     return `
       <button class="mev2-summary-card ${index === 0 ? "primary" : ""}"
         type="button" data-mev2-row="${esc(row.row_key)}">
-        <div class="mev2-summary-rank">#${index + 1}</div>
+        <div class="mev2-card-topline">
+          <div class="mev2-card-identity">
+            <div class="mev2-summary-rank">${index + 1}</div>
+            ${row.handedness ? `<span class="mev2-hand-badge">${esc(row.handedness)}</span>` : ""}
+            ${logo ? `<span class="mev2-team-logo-wrap"><img class="mev2-team-logo" src="${esc(logo)}" alt="" onerror="this.parentElement.style.display='none'"></span>` : ""}
+          </div>
+          <div class="mev2-summary-metric">
+            <strong>${metric}</strong>
+            <span>${metricLabel}</span>
+          </div>
+        </div>
         <div class="mev2-summary-copy">
           <strong>${esc(row.player_name || "—")}</strong>
-          <span>${esc(row.prop_label || row.prop_type || "—")}</span>
-          <small>${esc(matchupLabel(row))}${state.ranking === "edge" ? ` · Model ${pct(row.model_probability)} · Market ${pct(row.market_probability_no_vig)}` : ""}</small>
+          <span>${esc(teamAbbr(row.team_name) || "—")}</span>
         </div>
-        <div class="mev2-summary-metric">
-          <strong>${state.ranking === "edge" ? pct(row.edge_probability, true) : pct(row.model_probability)}</strong>
-          <span>${state.ranking === "edge" ? "EDGE" : "MODEL"}</span>
+        <div class="mev2-card-footer">
+          <span class="mev2-card-prop">${esc(propShort(row))}</span>
+          <span class="mev2-signal-badge"><i>${signalIcon(row)}</i>${esc(signalLabel(row))}</span>
         </div>
       </button>`;
   }
@@ -374,63 +423,77 @@
   }
 
   function tableHtml(rows) {
+    const subtitle = state.ranking === "edge"
+      ? "Ranked by edge (model probability vs. no-vig market probability)."
+      : "Ranked by raw model probability.";
     return `
       <section class="mev2-board">
-        <div class="mev2-section-heading compact">
+        <div class="mev2-board-heading">
           <div>
             <div class="mev2-kicker">MARKET EDGE OPPORTUNITIES</div>
             <h2>${esc(PROP_META[state.prop]?.label || "All Props")}</h2>
+            <p>${subtitle}</p>
           </div>
           <div class="mev2-board-meta">
-            <span>${rows.length} shown</span>
+            <span class="mev2-opportunity-count">${rows.length} ${rows.length === 1 ? "opportunity" : "opportunities"}</span>
             <span>${dateLabel(state.latestDate)}</span>
           </div>
         </div>
-        <div class="mev2-table-wrap">
-          <table class="mev2-table">
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>PLAYER</th>
-                <th>PROP</th>
-                <th>MODEL</th>
-                <th>MARKET</th>
-                <th>EDGE</th>
-                <th>BEST ODDS</th>
-                <th>BOOK</th>
-                <th aria-label="Details"></th>
-              </tr>
-            </thead>
-            <tbody>
-              ${rows.length ? rows.map((row, i) => tableRow(row, i)).join("") :
-                `<tr><td colspan="9"><div class="mev2-empty">
-                  ${state.ranking === "edge"
-                    ? "No positive model-vs-market edges with paired no-vig pricing are available for this selection."
-                    : "No model rows are available for this selection."}
-                </div></td></tr>`}
-            </tbody>
-          </table>
+        <div class="mev2-table-card">
+          <div class="mev2-table-wrap">
+            <table class="mev2-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>PLAYER</th>
+                  <th>PROP</th>
+                  <th>MODEL</th>
+                  <th>MARKET</th>
+                  <th>EDGE</th>
+                  <th>BEST ODDS</th>
+                  <th>BOOK</th>
+                  <th aria-label="Details"></th>
+                </tr>
+              </thead>
+              <tbody>
+                ${rows.length ? rows.map((row, i) => tableRow(row, i)).join("") :
+                  `<tr><td colspan="9"><div class="mev2-empty">
+                    ${state.ranking === "edge"
+                      ? "No positive model-vs-market edges with paired no-vig pricing are available for this selection."
+                      : "No model rows are available for this selection."}
+                  </div></td></tr>`}
+              </tbody>
+            </table>
+          </div>
         </div>
       </section>`;
   }
 
   function tableRow(row, index) {
-    const hand = row.handedness ? ` · ${esc(row.handedness)}` : "";
+    const hand = row.handedness || "";
+    const logo = teamLogoUrl(row.team_id);
+    const isPrimary = index === 0 && state.ranking === "edge";
     return `
-      <tr class="mev2-row" data-mev2-row="${esc(row.row_key)}" tabindex="0">
-        <td class="mev2-rank">${index + 1}</td>
+      <tr class="mev2-row ${isPrimary ? "primary" : ""}" data-mev2-row="${esc(row.row_key)}" tabindex="0">
+        <td class="mev2-rank-cell"><span class="mev2-rank-orb">${index + 1}</span></td>
         <td>
-          <div class="mev2-player">
-            <strong>${esc(row.player_name || "—")}</strong>
-            <span>${esc(matchupLabel(row) || "—")}${hand}</span>
+          <div class="mev2-player-cell">
+            <div class="mev2-player-badges">
+              ${hand ? `<span class="mev2-hand-badge">${esc(hand)}</span>` : ""}
+              ${logo ? `<span class="mev2-team-logo-wrap"><img class="mev2-team-logo" src="${esc(logo)}" alt="" onerror="this.parentElement.style.display='none'"></span>` : ""}
+            </div>
+            <div class="mev2-player">
+              <strong>${esc(row.player_name || "—")}</strong>
+              <span>${esc(teamAbbr(row.team_name) || "—")} @ ${esc(teamAbbr(row.opponent_team_name) || "—")}</span>
+            </div>
           </div>
         </td>
-        <td><span class="mev2-prop-pill">${esc(row.prop_label || row.prop_type || "—")}</span></td>
-        <td><strong>${pct(row.model_probability)}</strong></td>
+        <td><span class="mev2-prop-pill">${esc(propShort(row))}</span></td>
+        <td><strong class="mev2-model-value">${pct(row.model_probability)}</strong></td>
         <td>${marketCell(row)}</td>
         <td>${edgeCell(row)}</td>
-        <td><strong>${bestOddsCell(row)}</strong></td>
-        <td>${esc(bookLabel(row.best_book))}</td>
+        <td><span class="mev2-odds-pill">${bestOddsCell(row)}</span></td>
+        <td><span class="mev2-book-pill">${esc(bookLabel(row.best_book))}</span></td>
         <td><button class="mev2-chevron" type="button" data-mev2-row="${esc(row.row_key)}" aria-label="Open details">›</button></td>
       </tr>`;
   }

@@ -372,3 +372,430 @@
 #marketEdgeContent .mev2-board .mev2-table {
   margin-top: 0 !important;
 }
+
+
+/* =========================================================
+   Market Edge Wireframe Visual Refinement
+   Build: phase9b-market-edge-v2-20260908f
+   ========================================================= */
+
+#marketEdgeContent {
+  --wf-cyan: #22d3ee;
+  --wf-blue: #2563eb;
+  --wf-green: #34d399;
+  --wf-panel: rgba(5, 20, 42, .88);
+  --wf-row: rgba(11, 26, 48, .86);
+}
+
+#marketEdgeContent .mev2-shell {
+  gap: 24px;
+}
+
+#marketEdgeContent .mev2-summary {
+  padding: 18px;
+  border-color: rgba(34,211,238,.42);
+  background:
+    radial-gradient(circle at 12% 0%, rgba(14,165,233,.14), transparent 34%),
+    linear-gradient(180deg, rgba(7,30,55,.93), rgba(4,18,36,.92));
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.04),
+    0 0 0 1px rgba(14,165,233,.06),
+    0 14px 40px rgba(2,8,23,.24);
+}
+
+#marketEdgeContent .mev2-summary-header {
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:18px;
+  margin-bottom:14px;
+}
+
+#marketEdgeContent .mev2-summary-title-wrap {
+  display:flex;
+  align-items:flex-start;
+  gap:14px;
+}
+
+#marketEdgeContent .mev2-summary-trophy {
+  width:46px;
+  height:46px;
+  display:grid;
+  place-items:center;
+  flex:0 0 auto;
+  border-radius:13px;
+  border:1px solid rgba(34,211,238,.18);
+  background:rgba(14,165,233,.10);
+  font-size:1.45rem;
+}
+
+#marketEdgeContent .mev2-summary-header h2 {
+  margin:0;
+  color:#fff;
+  font-size:1.22rem;
+  letter-spacing:-.02em;
+}
+
+#marketEdgeContent .mev2-summary-header p {
+  margin:4px 0 0;
+  color:#94a3b8;
+  font-size:.78rem;
+}
+
+#marketEdgeContent .mev2-count {
+  padding:8px 13px;
+  border-color:rgba(34,211,238,.28);
+  color:#bae6fd;
+  background:rgba(8,47,73,.44);
+}
+
+#marketEdgeContent .mev2-summary-card {
+  min-height:150px;
+  display:flex;
+  flex-direction:column;
+  justify-content:space-between;
+  gap:10px;
+  padding:15px;
+  border-radius:16px;
+  border-color:rgba(56,189,248,.20);
+  background:
+    linear-gradient(180deg, rgba(4,15,32,.94), rgba(5,18,38,.88));
+}
+
+#marketEdgeContent .mev2-summary-card.primary {
+  border-color:rgba(52,211,153,.58);
+  background:
+    radial-gradient(circle at 8% 5%, rgba(16,185,129,.13), transparent 34%),
+    linear-gradient(180deg, rgba(4,24,35,.96), rgba(4,17,35,.90));
+  box-shadow:inset 0 0 0 1px rgba(52,211,153,.06);
+}
+
+#marketEdgeContent .mev2-card-topline,
+#marketEdgeContent .mev2-card-footer,
+#marketEdgeContent .mev2-card-identity {
+  display:flex;
+  align-items:center;
+}
+
+#marketEdgeContent .mev2-card-topline,
+#marketEdgeContent .mev2-card-footer {
+  justify-content:space-between;
+  gap:10px;
+}
+
+#marketEdgeContent .mev2-card-identity { gap:8px; }
+
+#marketEdgeContent .mev2-summary-rank,
+#marketEdgeContent .mev2-rank-orb {
+  display:grid;
+  place-items:center;
+  border-radius:50%;
+  color:#fff;
+  background:
+    linear-gradient(135deg,#22d3ee 0%,#3b82f6 48%,#8b5cf6 100%);
+  box-shadow:0 6px 16px rgba(37,99,235,.26);
+  font-weight:900;
+}
+
+#marketEdgeContent .mev2-summary-rank {
+  width:38px;
+  height:38px;
+  font-size:.82rem;
+}
+
+#marketEdgeContent .mev2-rank-orb {
+  width:34px;
+  height:34px;
+  font-size:.74rem;
+}
+
+#marketEdgeContent .mev2-hand-badge {
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-width:42px;
+  height:32px;
+  padding:0 8px;
+  border:1px solid rgba(96,165,250,.36);
+  border-radius:9px;
+  color:#dbeafe;
+  background:rgba(30,64,175,.10);
+  font-size:.68rem;
+  font-weight:900;
+  letter-spacing:.02em;
+}
+
+#marketEdgeContent .mev2-team-logo-wrap {
+  width:36px;
+  height:36px;
+  display:grid;
+  place-items:center;
+  flex:0 0 auto;
+  border:1px solid rgba(96,165,250,.24);
+  border-radius:9px;
+  background:rgba(2,6,23,.46);
+}
+
+#marketEdgeContent .mev2-team-logo {
+  width:28px;
+  height:28px;
+  object-fit:contain;
+}
+
+#marketEdgeContent .mev2-summary-copy {
+  display:flex;
+  flex-direction:column;
+  min-width:0;
+}
+
+#marketEdgeContent .mev2-summary-copy strong {
+  color:#fff;
+  font-size:1rem;
+  line-height:1.1;
+}
+
+#marketEdgeContent .mev2-summary-copy span {
+  margin-top:4px;
+  color:#94a3b8;
+  font-size:.75rem;
+}
+
+#marketEdgeContent .mev2-summary-metric strong {
+  color:#f8fafc;
+  font-size:1.72rem;
+  line-height:1;
+  letter-spacing:-.03em;
+}
+
+#marketEdgeContent .mev2-summary-card.primary .mev2-summary-metric strong {
+  color:#86efac;
+}
+
+#marketEdgeContent .mev2-summary-metric span {
+  margin-top:4px;
+  display:block;
+  color:#94a3b8;
+  font-size:.58rem;
+  font-weight:900;
+  letter-spacing:.18em;
+}
+
+#marketEdgeContent .mev2-card-prop {
+  color:#cbd5e1;
+  font-size:.72rem;
+  font-weight:800;
+}
+
+#marketEdgeContent .mev2-signal-badge {
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  min-height:30px;
+  padding:0 10px;
+  border:1px solid rgba(34,211,238,.40);
+  border-radius:999px;
+  color:#bae6fd;
+  background:rgba(8,47,73,.34);
+  font-size:.67rem;
+  font-weight:850;
+  white-space:nowrap;
+}
+
+#marketEdgeContent .mev2-signal-badge i {
+  font-style:normal;
+  color:#fbbf24;
+}
+
+#marketEdgeContent .mev2-board {
+  overflow:visible !important;
+  border:0 !important;
+  border-radius:0 !important;
+  background:transparent !important;
+  box-shadow:none !important;
+}
+
+#marketEdgeContent .mev2-board-heading {
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-end;
+  gap:18px;
+  margin-bottom:12px;
+  padding:0 2px;
+}
+
+#marketEdgeContent .mev2-board-heading h2 {
+  margin:0;
+  color:#fff;
+  font-size:1.34rem;
+  letter-spacing:-.025em;
+}
+
+#marketEdgeContent .mev2-board-heading p {
+  margin:5px 0 0;
+  color:#94a3b8;
+  font-size:.78rem;
+}
+
+#marketEdgeContent .mev2-board-meta {
+  display:flex;
+  align-items:center;
+  gap:10px;
+}
+
+#marketEdgeContent .mev2-opportunity-count {
+  display:inline-flex;
+  align-items:center;
+  min-height:36px;
+  padding:0 13px;
+  border:1px solid rgba(34,211,238,.35);
+  border-radius:999px;
+  color:#bae6fd;
+  background:rgba(8,47,73,.28);
+  font-weight:850;
+}
+
+#marketEdgeContent .mev2-table-card {
+  overflow:hidden;
+  border:1px solid rgba(34,211,238,.28);
+  border-radius:16px;
+  background:rgba(5,16,34,.92);
+  box-shadow:0 16px 44px rgba(2,8,23,.22);
+}
+
+#marketEdgeContent .mev2-table {
+  min-width:1050px;
+}
+
+#marketEdgeContent .mev2-table th {
+  padding:11px 13px;
+  color:#94a3b8;
+  border-top:0;
+  border-bottom:1px solid rgba(34,211,238,.18);
+  background:rgba(2,8,23,.76);
+  font-size:.62rem;
+  letter-spacing:.12em;
+}
+
+#marketEdgeContent .mev2-table td {
+  padding:11px 13px;
+  border-bottom:1px solid rgba(71,85,105,.34);
+  background:rgba(13,27,49,.74);
+}
+
+#marketEdgeContent .mev2-row:hover td {
+  background:rgba(16,43,68,.78);
+}
+
+#marketEdgeContent .mev2-row.primary td {
+  background:
+    linear-gradient(90deg, rgba(6,78,59,.44), rgba(13,40,50,.65) 72%, rgba(13,27,49,.78));
+  border-top:1px solid rgba(74,222,128,.76);
+  border-bottom:1px solid rgba(74,222,128,.58);
+}
+
+#marketEdgeContent .mev2-row.primary td:first-child {
+  box-shadow:inset 2px 0 0 rgba(74,222,128,.85);
+}
+
+#marketEdgeContent .mev2-rank-cell {
+  width:52px;
+}
+
+#marketEdgeContent .mev2-player-cell {
+  display:flex;
+  align-items:center;
+  gap:10px;
+  min-width:250px;
+}
+
+#marketEdgeContent .mev2-player-badges {
+  display:flex;
+  align-items:center;
+  gap:7px;
+  flex:0 0 auto;
+}
+
+#marketEdgeContent .mev2-player strong {
+  font-size:.86rem;
+  color:#fff;
+}
+
+#marketEdgeContent .mev2-player span {
+  margin-top:3px;
+  color:#94a3b8;
+  font-size:.68rem;
+}
+
+#marketEdgeContent .mev2-model-value {
+  color:#e2e8f0;
+  font-size:.86rem;
+}
+
+#marketEdgeContent .mev2-edge {
+  min-width:72px;
+  padding:0;
+  background:transparent !important;
+  font-size:.92rem;
+}
+
+#marketEdgeContent .mev2-edge.large,
+#marketEdgeContent .mev2-edge.medium,
+#marketEdgeContent .mev2-edge.small,
+#marketEdgeContent .mev2-edge.positive {
+  color:#4ade80;
+}
+
+#marketEdgeContent .mev2-odds-pill {
+  display:inline-flex;
+  justify-content:center;
+  min-width:68px;
+  padding:7px 9px;
+  border:1px solid rgba(96,165,250,.26);
+  border-radius:9px;
+  color:#f8fafc;
+  background:rgba(30,64,175,.10);
+  font-weight:900;
+}
+
+#marketEdgeContent .mev2-book-pill {
+  display:inline-flex;
+  justify-content:center;
+  min-width:90px;
+  padding:7px 10px;
+  border:1px solid rgba(34,211,238,.20);
+  border-radius:9px;
+  color:#bae6fd;
+  background:rgba(8,47,73,.22);
+  font-weight:800;
+}
+
+#marketEdgeContent .mev2-chevron {
+  width:34px;
+  height:34px;
+  border:1px solid rgba(96,165,250,.14);
+  border-radius:10px;
+  color:#e2e8f0;
+  background:rgba(30,41,59,.60);
+}
+
+#marketEdgeContent .mev2-footer {
+  margin-top:-10px;
+}
+
+@media (max-width:1180px) {
+  #marketEdgeContent .mev2-summary-card {
+    min-height:130px;
+  }
+}
+
+@media (max-width:720px) {
+  #marketEdgeContent .mev2-summary-header,
+  #marketEdgeContent .mev2-board-heading {
+    flex-direction:column;
+    align-items:flex-start;
+  }
+  #marketEdgeContent .mev2-board-meta {
+    width:100%;
+    justify-content:space-between;
+  }
+}
