@@ -1,12 +1,12 @@
 /* =========================================================
    MLB Hit Lab — Market Edge V2
-   Build: phase9b-market-edge-v2-20260908j
+   Build: phase9b-market-edge-v2-20260908k
    Owns only #marketEdgeView.
    ========================================================= */
 (() => {
   "use strict";
 
-  const BUILD = "phase9b-market-edge-v2-20260908j";
+  const BUILD = "phase9b-market-edge-v2-20260908k";
   const CACHE_TABLE = "mlb_market_edge_board_public_cache";
   const STORAGE_KEY = "marketEdgeV2State";
 
@@ -238,26 +238,46 @@
       const latestDate = latest.data?.[0]?.game_date;
       if (!latestDate) throw new Error("No Market Edge cache rows are available.");
 
-      const result = await client
-        .from(CACHE_TABLE)
-        .select([
-          "row_key","game_date","game_pk","game_label","game_time_utc",
-          "prop_type","prop_label","entity_type","player_id","player_name",
-          "team_id","team_name","opponent_team_id","opponent_team_name","handedness",
-          "market_line","side","model_probability","predicted_mean_k","market_probability_no_vig",
-          "edge_probability","best_american_odds","best_book","market_available",
-          "market_updated_at","model_name","model_status","prediction_stage",
-          "quality_status","rank_model","rank_edge","rank_model_prop","rank_edge_prop",
-          "rank_model_game","rank_edge_game","refreshed_at"
-        ].join(","))
-        .eq("game_date", latestDate)
-        .limit(2000);
+      const selectColumns = [
+        "row_key","game_date","game_pk","game_label","game_time_utc",
+        "prop_type","prop_label","entity_type","player_id","player_name",
+        "team_id","team_name","opponent_team_id","opponent_team_name","handedness",
+        "market_line","side","model_probability","predicted_mean_k","market_probability_no_vig",
+        "edge_probability","best_american_odds","best_book","market_available",
+        "market_updated_at","model_name","model_status","prediction_stage",
+        "quality_status","rank_model","rank_edge","rank_model_prop","rank_edge_prop",
+        "rank_model_game","rank_edge_game","refreshed_at"
+      ].join(",");
 
-      if (result.error) throw result.error;
+      // PostgREST/Supabase can cap a single response page. The daily Market Edge
+      // cache can exceed 1,000 rows, so page through the complete snapshot
+      // deterministically instead of assuming one request returns everything.
+      const pageSize = 1000;
+      const allRows = [];
+
+      for (let from = 0; ; from += pageSize) {
+        const page = await client
+          .from(CACHE_TABLE)
+          .select(selectColumns)
+          .eq("game_date", latestDate)
+          .order("row_key", { ascending: true })
+          .range(from, from + pageSize - 1);
+
+        if (page.error) throw page.error;
+
+        const pageRows = Array.isArray(page.data) ? page.data : [];
+        allRows.push(...pageRows);
+
+        if (pageRows.length < pageSize) break;
+      }
 
       state.latestDate = latestDate;
-      state.rows = Array.isArray(result.data) ? result.data : [];
+      state.rows = allRows;
       normalizeSelectedGame();
+
+      console.info(
+        `Market Edge cache loaded: ${state.rows.length} rows for ${latestDate}`
+      );
     } catch (err) {
       console.error("Market Edge V2 load failed", err);
       state.error = err?.message || String(err);
