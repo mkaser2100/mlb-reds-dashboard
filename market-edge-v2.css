@@ -341,3 +341,34 @@
   #marketEdgeContent .mev2-footer { grid-template-columns: 1fr; display: grid; }
   #marketEdgeContent .mev2-section-heading { flex-direction: column; }
 }
+
+
+/* =========================================================
+   Phase 3 — default workspace + compact opportunities card
+   Build: phase9b-market-edge-v2-20260908c
+   ========================================================= */
+
+#marketEdgeContent .mev2-board {
+  display: block !important;
+  align-self: start !important;
+  height: auto !important;
+  min-height: 0 !important;
+}
+
+#marketEdgeContent .mev2-board > .mev2-section-heading {
+  margin: 0 !important;
+  padding: 15px 16px 11px !important;
+  min-height: 0 !important;
+}
+
+#marketEdgeContent .mev2-board .mev2-kicker {
+  margin-bottom: 5px !important;
+}
+
+#marketEdgeContent .mev2-board .mev2-table-wrap {
+  margin-top: 0 !important;
+}
+
+#marketEdgeContent .mev2-board .mev2-table {
+  margin-top: 0 !important;
+}

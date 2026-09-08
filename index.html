@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="styles.css?v=reds-cleanup-release-4b-4c" />
   <link rel="stylesheet" href="pitcher-k-v1.css?v=pitcher-k-phase9-hitboard-match-20260907c" />
   <link rel="stylesheet" href="hit-lab-phase9a.css?v=phase9a-hit-single-team-logo-20260908b" />
-  <link rel="stylesheet" href="market-edge-v2.css?v=phase9b-market-edge-v2-20260908b" />
+  <link rel="stylesheet" href="market-edge-v2.css?v=phase9b-market-edge-v2-20260908c" />
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
@@ -19,7 +19,7 @@
           <div class="brand-mark">M</div>
           <div class="brand-copy">
             <div class="brand-title">MLB Hit Lab</div>
-            <div class="brand-subtitle">Hitter Intelligence</div>
+            <div class="brand-subtitle">MLB Prop Intelligence</div>
           </div>
         </div>
         <button class="sidebar-toggle" id="sidebarToggle" type="button" aria-label="Collapse sidebar" aria-expanded="true" title="Collapse menu">
@@ -27,17 +27,16 @@
         </button>
       </div>
       <nav class="nav">
-        <button class="nav-item active" type="button" data-view="mlb"><span class="nav-icon">🔥</span><span class="nav-label">MLB Hit Board</span></button>
-        <button class="nav-item" type="button" data-view="market"><span class="nav-icon">⭐</span><span class="nav-label">Market Edge</span></button>
+        <button class="nav-item active" type="button" data-view="market"><span class="nav-icon">⭐</span><span class="nav-label">Market Edge</span></button>
         <button class="nav-item" type="button" data-view="performance"><span class="nav-icon">📊</span><span class="nav-label">Model Performance</span></button>
       </nav>
       <div class="sidebar-card">
-        <div class="mini-label">Model</div><div class="mini-title">ML Prediction</div>
-        <p>V3 Hit is live for 1+ Hit. Home Run and 2+ Total Bases run as shadow models while live performance is evaluated.</p>
+        <div class="mini-label">Daily Workspace</div><div class="mini-title">Market Edge</div>
+        <p>Compare model probability to the no-vig market across hits, total bases, home runs, and pitcher strikeouts.</p>
       </div>
       <div class="sidebar-card subtle">
-        <div class="mini-label">Player Details</div><div class="mini-title">Click Any Row</div>
-        <p>Open any player to review target probability, matchup context, and model signals.</p>
+        <div class="mini-label">Prop Details</div><div class="mini-title">Click Any Row</div>
+        <p>Open any opportunity to review model probability, market probability, edge, line, and best available price.</p>
       </div>
       <div class="sidebar-footer"><div class="mini-label">Stack</div><div>GitHub Pages</div><div>Supabase</div><div>MLB Game Logs</div></div>
     </aside>
@@ -45,9 +44,9 @@
     <main class="main">
       <header class="topbar">
         <div>
-          <div class="eyebrow" id="pageEyebrow">All MLB · Daily Matchup Intelligence</div>
-          <h1 id="pageTitle">MLB Hit Board</h1>
-          <p class="page-subtitle" id="pageSubtitle">Top hitters across MLB by V3 machine-learning hit probability.</p>
+          <div class="eyebrow" id="pageEyebrow">Model vs Market · Cross-Prop Opportunity Board</div>
+          <h1 id="pageTitle">Market Edge</h1>
+          <p class="page-subtitle" id="pageSubtitle">Rank MLB player props by model-vs-market edge or by raw model probability.</p>
         </div>
         <div class="topbar-actions">
           <div class="live-pill"><span class="pulse"></span>Live Supabase Feed</div>
@@ -55,8 +54,8 @@
         </div>
       </header>
 
-      <section id="marketEdgeView" class="view"><div id="marketEdgeContent"><section class="performance-note"><strong>Loading Market Edge...</strong><span>Loading the unified cross-prop Market Edge board.</span></section></div></section>
-      <section id="mlbView" class="view active-view"><div id="mlbHitBoardContent"><section class="performance-note"><strong>Loading MLB Hit Board...</strong><span>Top hitters across MLB by V3 machine-learning hit probability.</span></section></div></section>
+      <section id="marketEdgeView" class="view active-view"><div id="marketEdgeContent"><section class="performance-note"><strong>Loading Market Edge...</strong><span>Loading the unified cross-prop Market Edge board.</span></section></div></section>
+      <section id="mlbView" class="view"><div id="mlbHitBoardContent"><section class="performance-note"><strong>Loading MLB Hit Board...</strong><span>Top hitters across MLB by V3 machine-learning hit probability.</span></section></div></section>
       <section id="performanceView" class="view"><div id="performanceContent"><section class="performance-note"><strong>Loading MLB Model Performance...</strong><span>Loading the redesigned four-card model performance page from Supabase.</span></section></div></section>
     </main>
   </div>
@@ -95,6 +94,6 @@
   <script src="./app-v4.js?v=unified-frontend-consolidation-20260812"></script>
   <script src="./hit-lab-phase9a.js?v=phase9a-hit-single-team-logo-20260908b"></script>
   <script src="./pitcher-k-v1.js?v=pitcher-k-phase9-hitboard-match-20260907c"></script>
-  <script src="./market-edge-v2.js?v=phase9b-market-edge-v2-20260908b"></script>
+  <script src="./market-edge-v2.js?v=phase9b-market-edge-v2-20260908c"></script>
 </body>
 </html>
