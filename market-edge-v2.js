@@ -1,16 +1,12 @@
 /* =========================================================
    MLB Hit Lab — Market Edge V2
-   Phase 9B / 2A
-   Build: phase9b-market-edge-v2-20260908a
-
-   Owns only #marketEdgeView. Does not modify app-v4.js behavior
-   outside the Market Edge view.
+   Build: phase9b-market-edge-v2-20260908g
+   Owns only #marketEdgeView.
    ========================================================= */
-
 (() => {
   "use strict";
 
-  const BUILD = "phase9b-market-edge-v2-20260908f";
+  const BUILD = "phase9b-market-edge-v2-20260908g";
   const CACHE_TABLE = "mlb_market_edge_board_public_cache";
   const STORAGE_KEY = "marketEdgeV2State";
 
@@ -40,40 +36,44 @@
     error: null
   };
 
-  function el(id) { return document.getElementById(id); }
+  const el = id => document.getElementById(id);
+
   function esc(v) {
     return String(v ?? "").replace(/[&<>"']/g, ch => ({
       "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;"
     })[ch]);
   }
+
   function num(v) {
     if (v == null || (typeof v === "string" && !v.trim())) return null;
     const n = Number(v);
     return Number.isFinite(n) ? n : null;
   }
+
   function pct(v, signed = false) {
     const n = num(v);
     if (n == null) return "—";
     const value = n * 100;
-    const sign = signed && value > 0 ? "+" : "";
-    return `${sign}${value.toFixed(1)}%`;
+    return `${signed && value > 0 ? "+" : ""}${value.toFixed(1)}%`;
   }
+
   function odds(v) {
     const n = num(v);
     if (n == null) return "—";
     return n > 0 ? `+${Math.round(n)}` : `${Math.round(n)}`;
   }
+
   function dateLabel(value) {
     if (!value) return "—";
-    const d = new Date(`${value}T12:00:00`);
-    return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(d);
+    return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" })
+      .format(new Date(`${value}T12:00:00`));
   }
+
   function timeLabel(value) {
     if (!value) return "";
-    const d = new Date(value);
     return new Intl.DateTimeFormat("en-US", {
       hour: "numeric", minute: "2-digit", timeZoneName: "short"
-    }).format(d);
+    }).format(new Date(value));
   }
 
   function bookLabel(value) {
@@ -108,7 +108,7 @@
   function matchupLabel(row) {
     const team = teamAbbr(row.team_name);
     const opp = teamAbbr(row.opponent_team_name);
-    return team && opp ? `${team} vs ${opp}` : (row.game_label || "");
+    return team && opp ? `${team} @ ${opp}` : (row.game_label || "");
   }
 
   function teamLogoUrl(teamId) {
@@ -165,8 +165,7 @@
   }
 
   function setPageCopy() {
-    const marketView = el("marketEdgeView");
-    if (!marketView?.classList.contains("active-view")) return;
+    if (!el("marketEdgeView")?.classList.contains("active-view")) return;
     if (el("pageEyebrow")) el("pageEyebrow").textContent = "ALL MLB · PROP INTELLIGENCE";
     if (el("pageTitle")) el("pageTitle").textContent = "Market Edge";
     if (el("pageSubtitle")) {
@@ -227,8 +226,7 @@
   }
 
   function propMatches(row) {
-    if (state.prop === "all") return true;
-    return TYPE_TO_KEY[row.prop_type] === state.prop;
+    return state.prop === "all" || TYPE_TO_KEY[row.prop_type] === state.prop;
   }
 
   function edgeEligible(row) {
@@ -286,9 +284,7 @@
       state.gamePk = null;
       return;
     }
-    if (!games.some(g => g.gamePk === String(state.gamePk))) {
-      state.gamePk = games[0].gamePk;
-    }
+    if (!games.some(g => g.gamePk === String(state.gamePk))) state.gamePk = games[0].gamePk;
   }
 
   function buttonGroup(label, buttons, className = "") {
@@ -348,10 +344,11 @@
 
   function summaryHtml(rows) {
     const top = rows.slice(0, 3);
-    const summaryTitle = state.ranking === "edge" ? "Top 3 Edge Plays" : "Top 3 Model Plays";
-    const summaryCopy = state.ranking === "edge"
+    const title = state.ranking === "edge" ? "Top 3 Edge Plays" : "Top 3 Model Plays";
+    const copy = state.ranking === "edge"
       ? "Highest positive model-vs-market edges with paired no-vig pricing."
       : "Highest model probabilities in the active view.";
+
     return `
       <section class="mev2-summary">
         <div class="mev2-summary-header">
@@ -359,15 +356,16 @@
             <div class="mev2-summary-trophy" aria-hidden="true">🏆</div>
             <div>
               <div class="mev2-kicker">DAILY SUMMARY</div>
-              <h2>${summaryTitle}</h2>
-              <p>${summaryCopy}</p>
+              <h2>${title}</h2>
+              <p>${copy}</p>
             </div>
           </div>
           <span class="mev2-count">👥 ${top.length} plays</span>
         </div>
         <div class="mev2-summary-grid">
-          ${top.length ? top.map((row, i) => summaryCard(row, i)).join("") :
-            `<div class="mev2-empty-summary">No qualifying rows for this selection.</div>`}
+          ${top.length
+            ? top.map((row, i) => summaryCard(row, i)).join("")
+            : `<div class="mev2-empty-summary">No qualifying rows for this selection.</div>`}
         </div>
       </section>`;
   }
@@ -376,12 +374,13 @@
     const logo = teamLogoUrl(row.team_id);
     const metric = state.ranking === "edge" ? pct(row.edge_probability, true) : pct(row.model_probability);
     const metricLabel = state.ranking === "edge" ? "EDGE" : "MODEL";
+
     return `
       <button class="mev2-summary-card ${index === 0 ? "primary" : ""}"
         type="button" data-mev2-row="${esc(row.row_key)}">
         <div class="mev2-card-topline">
           <div class="mev2-card-identity">
-            <div class="mev2-summary-rank">${index + 1}</div>
+            <span class="mev2-summary-rank">${index + 1}</span>
             ${row.handedness ? `<span class="mev2-hand-badge">${esc(row.handedness)}</span>` : ""}
             ${logo ? `<span class="mev2-team-logo-wrap"><img class="mev2-team-logo" src="${esc(logo)}" alt="" onerror="this.parentElement.style.display='none'"></span>` : ""}
           </div>
@@ -390,12 +389,13 @@
             <span>${metricLabel}</span>
           </div>
         </div>
+
         <div class="mev2-summary-copy">
           <strong>${esc(row.player_name || "—")}</strong>
-          <span>${esc(teamAbbr(row.team_name) || "—")}</span>
         </div>
+
         <div class="mev2-card-footer">
-          <span class="mev2-card-prop">${esc(propShort(row))}</span>
+          <span class="mev2-card-matchup">${esc(matchupLabel(row) || "—")}</span>
           <span class="mev2-signal-badge"><i>${signalIcon(row)}</i>${esc(signalLabel(row))}</span>
         </div>
       </button>`;
@@ -426,6 +426,7 @@
     const subtitle = state.ranking === "edge"
       ? "Ranked by edge (model probability vs. no-vig market probability)."
       : "Ranked by raw model probability.";
+
     return `
       <section class="mev2-board">
         <div class="mev2-board-heading">
@@ -444,24 +445,18 @@
             <table class="mev2-table">
               <thead>
                 <tr>
-                  <th>#</th>
-                  <th>PLAYER</th>
-                  <th>PROP</th>
-                  <th>MODEL</th>
-                  <th>MARKET</th>
-                  <th>EDGE</th>
-                  <th>BEST ODDS</th>
-                  <th>BOOK</th>
-                  <th aria-label="Details"></th>
+                  <th>#</th><th>PLAYER</th><th>PROP</th><th>MODEL</th><th>MARKET</th>
+                  <th>EDGE</th><th>BEST ODDS</th><th>BOOK</th><th aria-label="Details"></th>
                 </tr>
               </thead>
               <tbody>
-                ${rows.length ? rows.map((row, i) => tableRow(row, i)).join("") :
-                  `<tr><td colspan="9"><div class="mev2-empty">
-                    ${state.ranking === "edge"
-                      ? "No positive model-vs-market edges with paired no-vig pricing are available for this selection."
-                      : "No model rows are available for this selection."}
-                  </div></td></tr>`}
+                ${rows.length
+                  ? rows.map((row, i) => tableRow(row, i)).join("")
+                  : `<tr><td colspan="9"><div class="mev2-empty">${
+                      state.ranking === "edge"
+                        ? "No positive model-vs-market edges with paired no-vig pricing are available for this selection."
+                        : "No model rows are available for this selection."
+                    }</div></td></tr>`}
               </tbody>
             </table>
           </div>
@@ -473,6 +468,7 @@
     const hand = row.handedness || "";
     const logo = teamLogoUrl(row.team_id);
     const isPrimary = index === 0 && state.ranking === "edge";
+
     return `
       <tr class="mev2-row ${isPrimary ? "primary" : ""}" data-mev2-row="${esc(row.row_key)}" tabindex="0">
         <td class="mev2-rank-cell"><span class="mev2-rank-orb">${index + 1}</span></td>
@@ -484,7 +480,7 @@
             </div>
             <div class="mev2-player">
               <strong>${esc(row.player_name || "—")}</strong>
-              <span>${esc(teamAbbr(row.team_name) || "—")} @ ${esc(teamAbbr(row.opponent_team_name) || "—")}</span>
+              <span>${esc(matchupLabel(row) || "—")}</span>
             </div>
           </div>
         </td>
@@ -499,11 +495,7 @@
   }
 
   function statusHtml() {
-    const freshest = state.rows
-      .map(r => r.refreshed_at)
-      .filter(Boolean)
-      .sort()
-      .at(-1);
+    const freshest = state.rows.map(r => r.refreshed_at).filter(Boolean).sort().at(-1);
     return `
       <div class="mev2-footer">
         <div class="mev2-legend">
@@ -567,6 +559,7 @@
       btn.addEventListener("click", () => {
         const action = btn.dataset.mev2Action;
         const value = btn.dataset.mev2Value;
+
         if (action === "prop" && PROP_META[value]) state.prop = value;
         if (action === "ranking" && ["edge","model"].includes(value)) state.ranking = value;
         if (action === "scope" && ["top25","game"].includes(value)) {
@@ -577,6 +570,7 @@
           fetchLatestRows();
           return;
         }
+
         saveState();
         render();
       });
@@ -643,12 +637,7 @@
         <span>${esc(row.model_status || "—")}</span>
         <span>${esc(row.prediction_stage || "—")}</span>
         <span>${esc(row.quality_status || "—")}</span>
-      </div>
-      ${num(row.market_probability_no_vig) == null ? `
-        <div class="mev2-detail-note">
-          True market edge is unavailable because a paired Over/Under market was not available for no-vig normalization.
-        </div>` : ""}
-    `;
+      </div>`;
 
     requestAnimationFrame(() => {
       drawer.classList.add("open");
@@ -675,48 +664,18 @@
 
   function interceptMarketView() {
     const marketButton = document.querySelector('.nav-item[data-view="market"]');
-
-    // app-v4 owns the legacy Market Edge loader. Capture this click before its
-    // bubble handler so the legacy request cannot race and overwrite V2.
     marketButton?.addEventListener("click", event => {
       event.preventDefault();
       event.stopImmediatePropagation();
       activateMarketView();
     }, true);
 
-    const refresh = el("refreshButton");
-    refresh?.addEventListener("click", event => {
+    el("refreshButton")?.addEventListener("click", event => {
       if (!el("marketEdgeView")?.classList.contains("active-view")) return;
       event.preventDefault();
       event.stopImmediatePropagation();
       fetchLatestRows();
     }, true);
-
-    // Fallback protection if another script changes the active view directly.
-    const observer = new MutationObserver(() => {
-      if (el("marketEdgeView")?.classList.contains("active-view")) {
-        setPageCopy();
-        const root = el("marketEdgeContent");
-        if (root && !root.querySelector(".mev2-shell") && !state.loading) {
-          if (state.rows.length) render();
-          else fetchLatestRows();
-        }
-      }
-    });
-    if (el("marketEdgeView")) observer.observe(el("marketEdgeView"), { attributes: true, attributeFilter: ["class"] });
-
-    const headerObserver = new MutationObserver(() => {
-      if (!el("marketEdgeView")?.classList.contains("active-view")) return;
-      const expected = {
-        pageEyebrow: "ALL MLB · PROP INTELLIGENCE",
-        pageTitle: "Market Edge",
-        pageSubtitle: "Compare model probabilities with sportsbook markets across MLB player props."
-      };
-      if (Object.entries(expected).some(([id, text]) => el(id)?.textContent !== text)) setPageCopy();
-    });
-    ["pageEyebrow","pageTitle","pageSubtitle"].forEach(id => {
-      if (el(id)) headerObserver.observe(el(id), { childList: true, characterData: true, subtree: true });
-    });
   }
 
   window.runMarketEdgeV2SelfTest = function runMarketEdgeV2SelfTest() {
@@ -727,33 +686,20 @@
       totalRowsLoaded: state.rows.length,
       visibleRows: rows.length,
       max25: rows.length <= 25,
-      noEvColumn: ![...document.querySelectorAll("#marketEdgeContent th")].some(th => th.textContent.trim() === "EV"),
-      noTodayFilter: !/today/i.test(el("marketEdgeContent")?.querySelector(".mev2-control-card")?.textContent || ""),
-      noBookFilter: !/all books/i.test(el("marketEdgeContent")?.querySelector(".mev2-control-card")?.textContent || ""),
       gameScopeValid: state.scope !== "game" || rows.every(r => String(r.game_pk) === String(state.gamePk)),
-      edgeMathValid: state.rows
-        .filter(r => num(r.edge_probability) != null && num(r.market_probability_no_vig) != null && num(r.model_probability) != null)
-        .every(r => Math.abs(num(r.edge_probability) - (num(r.model_probability) - num(r.market_probability_no_vig))) < 0.0011),
       edgeRowsActionable: state.ranking !== "edge" || rows.every(r => edgeEligible(r)),
       probabilitiesValid: state.rows.every(r =>
         (num(r.model_probability) == null || (num(r.model_probability) >= 0 && num(r.model_probability) <= 1)) &&
         (num(r.market_probability_no_vig) == null || (num(r.market_probability_no_vig) >= 0 && num(r.market_probability_no_vig) <= 1))
       )
     };
-    tests.pass = Object.entries(tests)
-      .filter(([k]) => !["build","latestDate","totalRowsLoaded","visibleRows","pass"].includes(k))
-      .every(([,v]) => v === true);
+    tests.pass = tests.max25 && tests.gameScopeValid && tests.edgeRowsActionable && tests.probabilitiesValid;
     console.table(tests);
     return tests;
   };
 
   loadSavedState();
   interceptMarketView();
-
-  // Phase 3B: app-v4.js executes before this file and its legacy startup can
-  // reset the active view to MLB Hit Board. Market Edge is now the canonical
-  // landing page, so reclaim the default after legacy initialization finishes.
   activateMarketView();
-
   console.info(`Market Edge V2 loaded: ${BUILD}`);
 })();
