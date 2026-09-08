@@ -1,19 +1,14 @@
 /* =========================================================
    MLB Hit Lab — Market Edge V2
-   Build: phase9c-market-edge-live-20260908b
+   Build: phase9b-market-edge-v2-20260908k
    Owns only #marketEdgeView.
-   Live scope reuses one shared card renderer across all props.
    ========================================================= */
 (() => {
   "use strict";
 
-  const BUILD = "phase9c-market-edge-live-20260908b";
+  const BUILD = "phase9b-market-edge-v2-20260908k";
   const CACHE_TABLE = "mlb_market_edge_board_public_cache";
-  const BATTER_LIVE_TABLE = "mlb_market_edge_batter_live_status";
-  const PITCHER_K_TABLE = "mlb_pitcher_k_board_public_cache";
   const STORAGE_KEY = "marketEdgeV2State";
-  const ENABLE_MARKET_EDGE_LIVE = true;
-  const LIVE_BROWSER_REFRESH_MS = 60 * 1000;
 
   const PROP_META = {
     all:       { label: "All Props" },
@@ -37,13 +32,8 @@
     gamePk: null,
     latestDate: null,
     rows: [],
-    batterLive: new Map(),
-    pitcherLive: new Map(),
     loading: false,
-    liveLoading: false,
-    error: null,
-    liveError: null,
-    liveFetchedAt: null
+    error: null
   };
 
   const el = id => document.getElementById(id);
@@ -71,6 +61,11 @@
     const n = num(v);
     if (n == null) return "—";
     return n > 0 ? `+${Math.round(n)}` : `${Math.round(n)}`;
+  }
+
+  function expectedKs(v) {
+    const n = num(v);
+    return n == null ? "—" : n.toFixed(1);
   }
 
   function dateLabel(value) {
@@ -116,10 +111,9 @@
   }
 
   function matchupLabel(row) {
-    if (row.game_label) return String(row.game_label);
     const team = teamAbbr(row.team_name);
     const opp = teamAbbr(row.opponent_team_name);
-    return team && opp ? `${team} vs ${opp}` : "";
+    return team && opp ? `${team} @ ${opp}` : (row.game_label || "");
   }
 
   function teamLogoUrl(teamId) {
@@ -159,8 +153,7 @@
       const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
       if (PROP_META[saved.prop]) state.prop = saved.prop;
       if (["edge", "model"].includes(saved.ranking)) state.ranking = saved.ranking;
-      const allowedScopes = ENABLE_MARKET_EDGE_LIVE ? ["top25", "game", "live"] : ["top25", "game"];
-      if (allowedScopes.includes(saved.scope)) state.scope = saved.scope;
+      if (["top25", "game"].includes(saved.scope)) state.scope = saved.scope;
       if (saved.gamePk != null && String(saved.gamePk).trim()) state.gamePk = String(saved.gamePk);
     } catch (_) {}
   }
@@ -182,43 +175,34 @@
     if (el("pageTitle")) el("pageTitle").textContent = "Market Edge";
     if (el("pageSubtitle")) {
       el("pageSubtitle").textContent =
-        state.scope === "live"
-          ? "Track today's model opportunities as MLB games unfold."
-          : "Compare model probabilities with sportsbook markets across MLB player props.";
+        "Compare model probabilities with sportsbook markets across MLB player props.";
     }
   }
 
   function installHeaderGuard() {
+    const expected = {
+      pageEyebrow: "ALL MLB · PROP INTELLIGENCE",
+      pageTitle: "Market Edge",
+      pageSubtitle: "Compare model probabilities with sportsbook markets across MLB player props."
+    };
+
     const enforce = () => {
       if (!el("marketEdgeView")?.classList.contains("active-view")) return;
-
-      const expectedSubtitle = state.scope === "live"
-        ? "Track today's model opportunities as MLB games unfold."
-        : "Compare model probabilities with sportsbook markets across MLB player props.";
-
-      const expected = {
-        pageEyebrow: "ALL MLB · PROP INTELLIGENCE",
-        pageTitle: "Market Edge",
-        pageSubtitle: expectedSubtitle
-      };
-
-      const mismatch = Object.entries(expected).some(([id, value]) => {
-        const node = el(id);
-        return node && node.textContent !== value;
-      });
-
+      const mismatch = Object.entries(expected).some(([id, value]) => el(id)?.textContent !== value);
       if (mismatch) setPageCopy();
     };
 
     const observer = new MutationObserver(enforce);
 
-    ["pageEyebrow", "pageTitle", "pageSubtitle"].forEach(id => {
+    Object.keys(expected).forEach(id => {
       const node = el(id);
-      if (node) observer.observe(node, {
-        childList: true,
-        characterData: true,
-        subtree: true
-      });
+      if (node) {
+        observer.observe(node, {
+          childList: true,
+          characterData: true,
+          subtree: true
+        });
+      }
     });
 
     const marketView = el("marketEdgeView");
@@ -233,69 +217,6 @@
     requestAnimationFrame(enforce);
   }
 
-  function liveKey(gamePk, playerId) {
-    return `${gamePk}:${playerId}`;
-  }
-
-  function liveFor(row) {
-    const key = liveKey(row.game_pk, row.player_id);
-    return row.prop_type === "pitcher_strikeouts"
-      ? state.pitcherLive.get(key) || null
-      : state.batterLive.get(key) || null;
-  }
-
-  function isLiveRow(row) {
-    return liveFor(row)?.is_game_live === true;
-  }
-
-  async function fetchLiveData(renderAfter = false) {
-    if (!ENABLE_MARKET_EDGE_LIVE || !state.latestDate || state.liveLoading) return;
-    state.liveLoading = true;
-    state.liveError = null;
-
-    try {
-      const [batterResult, pitcherResult] = await Promise.all([
-        client
-          .from(BATTER_LIVE_TABLE)
-          .select([
-            "game_pk","player_id","game_date","player_name","team_id","opponent_team_id",
-            "game_status","abstract_game_state","detailed_game_state",
-            "current_inning","inning_half","is_game_live","is_game_final",
-            "plate_appearances","at_bats","hits","doubles","triples","home_runs",
-            "total_bases","walks","strikeouts","runs","rbi","fetched_at"
-          ].join(","))
-          .eq("game_date", state.latestDate),
-        client
-          .from(PITCHER_K_TABLE)
-          .select([
-            "game_pk","pitcher_id","game_date","pitcher_name","team_id","opponent_team_id",
-            "game_status","abstract_game_state","detailed_game_state",
-            "current_inning","inning_half","is_game_live","is_game_final","is_starter_active",
-            "live_strikeouts","live_innings_pitched","live_pitches","live_batters_faced",
-            "live_hits_allowed","live_walks","live_earned_runs","live_fetched_at"
-          ].join(","))
-          .eq("game_date", state.latestDate)
-      ]);
-
-      if (batterResult.error) throw batterResult.error;
-      if (pitcherResult.error) throw pitcherResult.error;
-
-      state.batterLive = new Map(
-        (batterResult.data || []).map(row => [liveKey(row.game_pk, row.player_id), row])
-      );
-      state.pitcherLive = new Map(
-        (pitcherResult.data || []).map(row => [liveKey(row.game_pk, row.pitcher_id), row])
-      );
-      state.liveFetchedAt = new Date().toISOString();
-    } catch (err) {
-      console.error("Market Edge live load failed", err);
-      state.liveError = err?.message || String(err);
-    } finally {
-      state.liveLoading = false;
-      if (renderAfter && state.scope === "live") render();
-    }
-  }
-
   async function fetchLatestRows() {
     if (state.loading) return;
     state.loading = true;
@@ -303,7 +224,9 @@
     render();
 
     try {
-      if (typeof client === "undefined" || !client?.from) throw new Error("Supabase client is not available.");
+      if (typeof client === "undefined" || !client?.from) {
+        throw new Error("Supabase client is not available.");
+      }
 
       const latest = await client
         .from(CACHE_TABLE)
@@ -326,8 +249,12 @@
         "rank_model_game","rank_edge_game","refreshed_at"
       ].join(",");
 
+      // PostgREST/Supabase can cap a single response page. The daily Market Edge
+      // cache can exceed 1,000 rows, so page through the complete snapshot
+      // deterministically instead of assuming one request returns everything.
       const pageSize = 1000;
       const allRows = [];
+
       for (let from = 0; ; from += pageSize) {
         const page = await client
           .from(CACHE_TABLE)
@@ -335,18 +262,22 @@
           .eq("game_date", latestDate)
           .order("row_key", { ascending: true })
           .range(from, from + pageSize - 1);
+
         if (page.error) throw page.error;
+
         const pageRows = Array.isArray(page.data) ? page.data : [];
         allRows.push(...pageRows);
+
         if (pageRows.length < pageSize) break;
       }
 
       state.latestDate = latestDate;
       state.rows = allRows;
       normalizeSelectedGame();
-      await fetchLiveData(false);
 
-      console.info(`Market Edge cache loaded: ${state.rows.length} rows for ${latestDate}`);
+      console.info(
+        `Market Edge cache loaded: ${state.rows.length} rows for ${latestDate}`
+      );
     } catch (err) {
       console.error("Market Edge V2 load failed", err);
       state.error = err?.message || String(err);
@@ -372,8 +303,6 @@
 
     if (state.scope === "game" && state.gamePk != null) {
       rows = rows.filter(r => String(r.game_pk) === String(state.gamePk));
-    } else if (state.scope === "live") {
-      rows = rows.filter(isLiveRow);
     }
 
     if (state.ranking === "edge") {
@@ -449,10 +378,7 @@
     ];
     const scopeButtons = [
       { label: "Top 25", action: "scope", value: "top25", active: state.scope === "top25" },
-      { label: "Select Game", action: "scope", value: "game", active: state.scope === "game" },
-      ...(ENABLE_MARKET_EDGE_LIVE
-        ? [{ label: "Live", action: "scope", value: "live", active: state.scope === "live" }]
-        : [])
+      { label: "Select Game", action: "scope", value: "game", active: state.scope === "game" }
     ];
 
     const games = gameOptions();
@@ -511,6 +437,7 @@
     const logo = teamLogoUrl(row.team_id);
     const metric = state.ranking === "edge" ? pct(row.edge_probability, true) : pct(row.model_probability);
     const metricLabel = state.ranking === "edge" ? "EDGE" : "MODEL";
+
     return `
       <button class="mev2-summary-card ${index === 0 ? "primary" : ""}"
         type="button" data-mev2-row="${esc(row.row_key)}">
@@ -520,9 +447,16 @@
             ${row.handedness ? `<span class="mev2-hand-badge">${esc(row.handedness)}</span>` : ""}
             ${logo ? `<span class="mev2-team-logo-wrap"><img class="mev2-team-logo" src="${esc(logo)}" alt="" onerror="this.parentElement.style.display='none'"></span>` : ""}
           </div>
-          <div class="mev2-summary-metric"><strong>${metric}</strong><span>${metricLabel}</span></div>
+          <div class="mev2-summary-metric">
+            <strong>${metric}</strong>
+            <span>${metricLabel}</span>
+          </div>
         </div>
-        <div class="mev2-summary-copy"><strong>${esc(row.player_name || "—")}</strong></div>
+
+        <div class="mev2-summary-copy">
+          <strong>${esc(row.player_name || "—")}</strong>
+        </div>
+
         <div class="mev2-card-footer">
           <span class="mev2-card-matchup">${esc(matchupLabel(row) || "—")}</span>
           <span class="mev2-signal-badge"><i>${signalIcon(row)}</i>${esc(signalLabel(row))}</span>
@@ -532,13 +466,15 @@
 
   function marketCell(row) {
     if (row.market_available !== true || num(row.market_probability_no_vig) == null) {
-      return `<span class="mev2-na">—</span>`;
+      return `<span class="mev2-na" title="No paired Over/Under market is available for a true no-vig probability.">—</span>`;
     }
     return pct(row.market_probability_no_vig);
   }
 
   function edgeCell(row) {
-    if (row.market_available !== true || num(row.market_probability_no_vig) == null) return `<span class="mev2-na">—</span>`;
+    if (row.market_available !== true || num(row.market_probability_no_vig) == null) {
+      return `<span class="mev2-na">—</span>`;
+    }
     const n = num(row.edge_probability);
     if (n == null) return `<span class="mev2-na">—</span>`;
     const cls = n >= 0.10 ? "large" : n >= 0.05 ? "medium" : n >= 0.03 ? "small" : "positive";
@@ -595,6 +531,7 @@
     const hand = row.handedness || "";
     const logo = teamLogoUrl(row.team_id);
     const isPrimary = index === 0 && state.ranking === "edge";
+
     return `
       <tr class="mev2-row ${isPrimary ? "primary" : ""}" data-mev2-row="${esc(row.row_key)}" tabindex="0">
         <td class="mev2-rank-cell"><span class="mev2-rank-orb">${index + 1}</span></td>
@@ -604,7 +541,10 @@
               ${hand ? `<span class="mev2-hand-badge">${esc(hand)}</span>` : ""}
               ${logo ? `<span class="mev2-team-logo-wrap"><img class="mev2-team-logo" src="${esc(logo)}" alt="" onerror="this.parentElement.style.display='none'"></span>` : ""}
             </div>
-            <div class="mev2-player"><strong>${esc(row.player_name || "—")}</strong><span>${esc(matchupLabel(row) || "—")}</span></div>
+            <div class="mev2-player">
+              <strong>${esc(row.player_name || "—")}</strong>
+              <span>${esc(matchupLabel(row) || "—")}</span>
+            </div>
           </div>
         </td>
         <td><span class="mev2-prop-pill">${esc(propShort(row))}</span></td>
@@ -617,153 +557,6 @@
       </tr>`;
   }
 
-  function liveStatusText(row, live) {
-    const key = TYPE_TO_KEY[row.prop_type];
-    if (key === "pitcher_k") {
-      if (live.is_starter_active === true) return "STARTER ACTIVE";
-      if (live.is_starter_active === false) return "STARTER OUT";
-      return "LIVE";
-    }
-    if (key === "hit") return (num(live.hits) || 0) >= 1 ? "HIT RECORDED" : "IN PROGRESS";
-    if (key === "tb") return (num(live.total_bases) || 0) >= 2 ? "2+ TB HIT" : `${Math.max(0, 2 - (num(live.total_bases) || 0))} TB TO GO`;
-    if (key === "hr") return (num(live.home_runs) || 0) >= 1 ? "HOME RUN HIT" : "IN PROGRESS";
-    return "LIVE";
-  }
-
-  function liveMetrics(row, live) {
-    const key = TYPE_TO_KEY[row.prop_type];
-    if (key === "pitcher_k") {
-      return [
-        `${num(live.live_strikeouts) ?? 0} K`,
-        `${num(live.live_innings_pitched) == null ? "—" : Number(live.live_innings_pitched).toFixed(1)} IP`,
-        `${num(live.live_pitches) ?? 0} pitches`,
-        `${num(live.live_batters_faced) ?? 0} BF`
-      ];
-    }
-    const hits = num(live.hits) ?? 0;
-    const ab = num(live.at_bats) ?? 0;
-    const pa = num(live.plate_appearances) ?? 0;
-    if (key === "hit") return [`${hits} H`, `${hits}-for-${ab}`, `${pa} PA`];
-    if (key === "tb") return [`${num(live.total_bases) ?? 0} TB`, `${hits}-for-${ab}`, `${pa} PA`];
-    if (key === "hr") return [`${num(live.home_runs) ?? 0} HR`, `${hits}-for-${ab}`, `${pa} PA`];
-    return [`${pa} PA`];
-  }
-
-  function liveStrip(row, live) {
-    const inning = live.current_inning ? `${esc(live.inning_half || "")} ${esc(live.current_inning)}`.trim() : "In Progress";
-    const status = liveStatusText(row, live);
-    const positive = /RECORDED|2\+ TB HIT|HOME RUN HIT/.test(status);
-    return `
-      <div class="mev2-live-strip ${positive ? "success" : ""}">
-        <b><span class="mev2-live-dot"></span>LIVE · ${inning}</b>
-        ${liveMetrics(row, live).map(m => `<span>${esc(m)}</span>`).join("")}
-        <em>${esc(status)}</em>
-      </div>`;
-  }
-
-  function liveSummaryHtml(rows) {
-    const games = new Set(rows.map(r => String(r.game_pk))).size;
-    const successCount = rows.filter(row => {
-      const live = liveFor(row);
-      if (!live) return false;
-      return /RECORDED|2\+ TB HIT|HOME RUN HIT/.test(liveStatusText(row, live));
-    }).length;
-
-    return `
-      <section class="mev2-live-summary">
-        <div>
-          <div class="mev2-kicker">LIVE MARKET EDGE</div>
-          <h2>Today's Live Opportunities</h2>
-          <p>Pregame model conviction paired with current MLB game progress. Live actuals refresh every five minutes.</p>
-        </div>
-        <div class="mev2-live-summary-pills">
-          <span class="live"><i class="mev2-live-dot"></i>${games} live ${games === 1 ? "game" : "games"}</span>
-          <span>${rows.length} tracked ${rows.length === 1 ? "prop" : "props"}</span>
-          <span>${successCount} already hit</span>
-          <span>${dateLabel(state.latestDate)}</span>
-        </div>
-      </section>`;
-  }
-
-  function liveCard(row, index) {
-    const live = liveFor(row);
-    const logo = teamLogoUrl(row.team_id);
-    const metric = state.ranking === "edge" ? pct(row.edge_probability, true) : pct(row.model_probability);
-    const metricLabel = state.ranking === "edge" ? "EDGE" : "MODEL";
-    const edge = num(row.edge_probability);
-    const tier = edge >= .10 ? "large" : edge >= .05 ? "medium" : edge >= .03 ? "small" : "base";
-    const sideLine = row.prop_type === "pitcher_strikeouts" && row.market_line != null
-      ? `${String(row.side || "").toUpperCase()} ${row.market_line} Ks`
-      : propShort(row);
-
-    return `
-      <button class="mev2-live-card tier-${tier}" type="button" data-mev2-row="${esc(row.row_key)}">
-        <div class="mev2-live-card-left">
-          <span class="mev2-live-prop-chip">${esc(TYPE_TO_KEY[row.prop_type] === "pitcher_k" ? "KS" : propShort(row))}</span>
-          ${logo ? `<span class="mev2-live-logo"><img src="${esc(logo)}" alt="" onerror="this.parentElement.style.display='none'"></span>` : ""}
-          <span class="mev2-live-rank">#${index + 1}</span>
-        </div>
-
-        <div class="mev2-live-card-main">
-          <div class="mev2-live-card-topline">
-            <span class="mev2-live-tier">${edge >= .10 ? "LARGE EDGE" : edge >= .05 ? "MEDIUM EDGE" : edge >= .03 ? "SMALL EDGE" : "MODEL VIEW"}</span>
-            <span class="mev2-live-stage">${esc(String(row.prediction_stage || "").toUpperCase() || "MODEL")}</span>
-          </div>
-          <h3>${esc(row.player_name || "—")} <span>· ${esc(sideLine)}</span></h3>
-          <div class="mev2-live-matchup">${esc(matchupLabel(row) || "—")}</div>
-          <div class="mev2-live-pregame-stats">
-            <span>Model <strong>${pct(row.model_probability)}</strong></span>
-            ${row.market_available === true ? `<span>Market <strong>${pct(row.market_probability_no_vig)}</strong></span>` : ""}
-            ${edge != null ? `<span>Edge <strong class="positive">${pct(edge, true)}</strong></span>` : ""}
-            ${row.best_book ? `<span>${esc(bookLabel(row.best_book))} <strong>${bestOddsCell(row)}</strong></span>` : ""}
-          </div>
-          ${live ? liveStrip(row, live) : ""}
-        </div>
-
-        <div class="mev2-live-card-metric">
-          <strong>${metric}</strong>
-          <span>${metricLabel}</span>
-        </div>
-      </button>`;
-  }
-
-  function liveBoardHtml(rows) {
-    if (state.liveLoading && !state.liveFetchedAt) {
-      return `
-        <section class="mev2-live-empty">
-          <span class="mev2-live-dot"></span>
-          <h3>Loading live games...</h3>
-          <p>Reading the five-minute MLB live feeds.</p>
-        </section>`;
-    }
-
-    if (!rows.length) {
-      return `
-        <section class="mev2-live-empty">
-          <span class="mev2-live-dot"></span>
-          <h3>No qualifying Market Edge games are live right now</h3>
-          <p>The board will populate automatically as today's tracked games begin.</p>
-          ${state.liveError ? `<small>${esc(state.liveError)}</small>` : ""}
-        </section>`;
-    }
-
-    return `
-      <section class="mev2-live-board">
-        <div class="mev2-board-heading">
-          <div>
-            <div class="mev2-kicker">LIVE TRACKING</div>
-            <h2>${esc(PROP_META[state.prop]?.label || "All Props")}</h2>
-            <p>${state.ranking === "edge" ? "Ranked by pregame Market Edge." : "Ranked by pregame model probability."}</p>
-          </div>
-          <div class="mev2-board-meta">
-            <span class="mev2-opportunity-count">${rows.length} live</span>
-            <span>${state.liveFetchedAt ? `Checked ${esc(timeLabel(state.liveFetchedAt))}` : ""}</span>
-          </div>
-        </div>
-        <div class="mev2-live-card-list">${rows.map(liveCard).join("")}</div>
-      </section>`;
-  }
-
   function statusHtml() {
     const freshest = state.rows.map(r => r.refreshed_at).filter(Boolean).sort().at(-1);
     return `
@@ -773,9 +566,7 @@
           <span><i class="medium"></i> Medium ≥ 5%</span>
           <span><i class="small"></i> Small ≥ 3%</span>
         </div>
-        <span>${state.scope === "live" && state.liveFetchedAt
-          ? `Live feed checked ${esc(timeLabel(state.liveFetchedAt))}`
-          : `Cache updated ${freshest ? esc(timeLabel(freshest)) : "—"}`}</span>
+        <span>Cache updated ${freshest ? esc(timeLabel(freshest)) : "—"}</span>
       </div>`;
   }
 
@@ -813,13 +604,11 @@
     }
 
     const rows = filteredRows();
-    const isLive = ENABLE_MARKET_EDGE_LIVE && state.scope === "live";
-
     root.innerHTML = `
-      <div class="mev2-shell ${isLive ? "mev2-live-mode" : ""}" data-build="${BUILD}">
+      <div class="mev2-shell" data-build="${BUILD}">
         ${controlsHtml()}
-        ${isLive ? liveSummaryHtml(rows) : summaryHtml(rows)}
-        ${isLive ? liveBoardHtml(rows) : tableHtml(rows)}
+        ${summaryHtml(rows)}
+        ${tableHtml(rows)}
         ${statusHtml()}
       </div>`;
     bind();
@@ -835,13 +624,10 @@
         const value = btn.dataset.mev2Value;
 
         if (action === "prop" && PROP_META[value]) state.prop = value;
-        if (action === "ranking" && ["edge", "model"].includes(value)) state.ranking = value;
-        if (action === "scope") {
-          const allowedScopes = ENABLE_MARKET_EDGE_LIVE ? ["top25", "game", "live"] : ["top25", "game"];
-          if (allowedScopes.includes(value)) {
-            state.scope = value;
-            normalizeSelectedGame();
-          }
+        if (action === "ranking" && ["edge","model"].includes(value)) state.ranking = value;
+        if (action === "scope" && ["top25","game"].includes(value)) {
+          state.scope = value;
+          normalizeSelectedGame();
         }
         if (action === "reload") {
           fetchLatestRows();
@@ -850,7 +636,6 @@
 
         saveState();
         render();
-        if (state.scope === "live") fetchLiveData(true);
       });
     });
 
@@ -876,11 +661,6 @@
   }
 
   function openMarketEdgeDetail(rowKey) {
-    // The unified Market Edge drawer installs a capture-phase row handler after
-    // this file loads. Keep this fallback for environments where that module is absent.
-    const unified = el("marketUnifiedDrawer");
-    if (unified) return;
-
     const row = state.rows.find(r => String(r.row_key) === String(rowKey));
     if (!row) return;
 
@@ -910,10 +690,19 @@
       <p class="mev2-detail-matchup">${esc(matchupLabel(row))}</p>
       <div class="mev2-detail-grid">
         <div><span>Model Probability</span><strong>${pct(row.model_probability)}</strong></div>
+        ${row.prop_type === "pitcher_strikeouts"
+          ? `<div><span>Expected Ks</span><strong>${expectedKs(row.predicted_mean_k)}</strong></div>`
+          : ""}
         <div><span>Market No-Vig</span><strong>${marketCell(row)}</strong></div>
         <div><span>Edge</span><strong>${edgeCell(row)}</strong></div>
         <div><span>Best Odds</span><strong>${bestOddsCell(row)}</strong></div>
         <div><span>Sportsbook</span><strong>${esc(bookLabel(row.best_book))}</strong></div>
+        <div><span>Line</span><strong>${row.market_line == null ? "—" : esc(row.market_line)} ${esc(row.side || "")}</strong></div>
+      </div>
+      <div class="mev2-detail-status">
+        <span>${esc(row.model_status || "—")}</span>
+        <span>${esc(row.prediction_stage || "—")}</span>
+        <span>${esc(row.quality_status || "—")}</span>
       </div>`;
 
     requestAnimationFrame(() => {
@@ -936,10 +725,7 @@
     setPageCopy();
 
     if (!state.rows.length && !state.loading) fetchLatestRows();
-    else {
-      render();
-      if (state.scope === "live") fetchLiveData(true);
-    }
+    else render();
   }
 
   function interceptMarketView() {
@@ -967,28 +753,16 @@
       visibleRows: rows.length,
       max25: rows.length <= 25,
       gameScopeValid: state.scope !== "game" || rows.every(r => String(r.game_pk) === String(state.gamePk)),
-      liveScopeValid: state.scope !== "live" || rows.every(isLiveRow),
       edgeRowsActionable: state.ranking !== "edge" || rows.every(r => edgeEligible(r)),
       probabilitiesValid: state.rows.every(r =>
         (num(r.model_probability) == null || (num(r.model_probability) >= 0 && num(r.model_probability) <= 1)) &&
         (num(r.market_probability_no_vig) == null || (num(r.market_probability_no_vig) >= 0 && num(r.market_probability_no_vig) <= 1))
-      ),
-      liveMapsLoaded: state.batterLive instanceof Map && state.pitcherLive instanceof Map
+      )
     };
-    tests.pass = tests.max25 && tests.gameScopeValid && tests.liveScopeValid &&
-      tests.edgeRowsActionable && tests.probabilitiesValid && tests.liveMapsLoaded;
+    tests.pass = tests.max25 && tests.gameScopeValid && tests.edgeRowsActionable && tests.probabilitiesValid;
     console.table(tests);
     return tests;
   };
-
-  window.marketEdgeLiveFeatureEnabled = ENABLE_MARKET_EDGE_LIVE;
-
-  setInterval(() => {
-    if (!ENABLE_MARKET_EDGE_LIVE) return;
-    if (state.scope !== "live") return;
-    if (!el("marketEdgeView")?.classList.contains("active-view")) return;
-    fetchLiveData(true);
-  }, LIVE_BROWSER_REFRESH_MS);
 
   loadSavedState();
   interceptMarketView();
