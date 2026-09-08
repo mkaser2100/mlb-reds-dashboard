@@ -1,12 +1,12 @@
 /* =========================================================
    MLB Hit Lab — Market Edge V2
-   Build: phase9b-market-edge-v2-20260908i
+   Build: phase9b-market-edge-v2-20260908j
    Owns only #marketEdgeView.
    ========================================================= */
 (() => {
   "use strict";
 
-  const BUILD = "phase9b-market-edge-v2-20260908i";
+  const BUILD = "phase9b-market-edge-v2-20260908j";
   const CACHE_TABLE = "mlb_market_edge_board_public_cache";
   const STORAGE_KEY = "marketEdgeV2State";
 
@@ -61,6 +61,11 @@
     const n = num(v);
     if (n == null) return "—";
     return n > 0 ? `+${Math.round(n)}` : `${Math.round(n)}`;
+  }
+
+  function expectedKs(v) {
+    const n = num(v);
+    return n == null ? "—" : n.toFixed(1);
   }
 
   function dateLabel(value) {
@@ -239,7 +244,7 @@
           "row_key","game_date","game_pk","game_label","game_time_utc",
           "prop_type","prop_label","entity_type","player_id","player_name",
           "team_id","team_name","opponent_team_id","opponent_team_name","handedness",
-          "market_line","side","model_probability","market_probability_no_vig",
+          "market_line","side","model_probability","predicted_mean_k","market_probability_no_vig",
           "edge_probability","best_american_odds","best_book","market_available",
           "market_updated_at","model_name","model_status","prediction_stage",
           "quality_status","rank_model","rank_edge","rank_model_prop","rank_edge_prop",
@@ -665,6 +670,9 @@
       <p class="mev2-detail-matchup">${esc(matchupLabel(row))}</p>
       <div class="mev2-detail-grid">
         <div><span>Model Probability</span><strong>${pct(row.model_probability)}</strong></div>
+        ${row.prop_type === "pitcher_strikeouts"
+          ? `<div><span>Expected Ks</span><strong>${expectedKs(row.predicted_mean_k)}</strong></div>`
+          : ""}
         <div><span>Market No-Vig</span><strong>${marketCell(row)}</strong></div>
         <div><span>Edge</span><strong>${edgeCell(row)}</strong></div>
         <div><span>Best Odds</span><strong>${bestOddsCell(row)}</strong></div>
