@@ -1,12 +1,12 @@
 /* =========================================================
    MLB Hit Lab — Market Edge V2
-   Build: phase9b-market-edge-v2-20260908g
+   Build: phase9b-market-edge-v2-20260908h
    Owns only #marketEdgeView.
    ========================================================= */
 (() => {
   "use strict";
 
-  const BUILD = "phase9b-market-edge-v2-20260908g";
+  const BUILD = "phase9b-market-edge-v2-20260908h";
   const CACHE_TABLE = "mlb_market_edge_board_public_cache";
   const STORAGE_KEY = "marketEdgeV2State";
 
