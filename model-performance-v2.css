@@ -1,0 +1,112 @@
+/* =========================================================
+   MLB Prop Intelligence — Model Performance V2
+   Build: model-performance-v2-20260909a
+   ========================================================= */
+#performanceContent {
+  --mp-border: rgba(148,163,184,.16);
+  --mp-text: #f8fafc;
+  --mp-muted: #94a3b8;
+  --mp-dim: #64748b;
+  --mp-accent: #38bdf8;
+  --mp-green: #34d399;
+  --mp-red: #fb7185;
+  --mp-amber: #fbbf24;
+}
+#performanceContent .mpv2-shell{display:grid;gap:24px;min-width:0}
+#performanceContent .mpv2-control-card,#performanceContent .mpv2-panel,#performanceContent .mpv2-kpi-section{border:1px solid var(--mp-border);border-radius:20px;background:linear-gradient(180deg,rgba(30,41,59,.70),rgba(15,23,42,.74));box-shadow:inset 0 1px 0 rgba(255,255,255,.025)}
+#performanceContent .mpv2-control-card{padding:14px}
+#performanceContent .mpv2-control-grid{display:grid;grid-template-columns:minmax(520px,1.5fr) minmax(300px,.7fr);gap:12px;align-items:end}
+#performanceContent .mpv2-control-label,#performanceContent .mpv2-kicker{display:block;margin:0 0 7px 2px;color:#64748b;font-size:.66rem;font-weight:900;letter-spacing:.12em}
+#performanceContent .mpv2-segments{display:flex;min-height:44px;padding:3px;gap:3px;border:1px solid rgba(148,163,184,.13);border-radius:13px;background:rgba(2,6,23,.42)}
+#performanceContent .mpv2-segment{flex:1 1 auto;min-width:0;border:0;border-radius:10px;background:transparent;color:#94a3b8;font:inherit;font-size:.78rem;font-weight:800;cursor:pointer;white-space:nowrap;padding:0 10px}
+#performanceContent .mpv2-segment:hover{color:#e2e8f0;background:rgba(148,163,184,.07)}
+#performanceContent .mpv2-segment.active{color:#fff;background:linear-gradient(180deg,rgba(37,99,235,.96),rgba(29,78,216,.88));box-shadow:0 5px 16px rgba(37,99,235,.15)}
+#performanceContent .mpv2-kpi-section{padding:16px;background:radial-gradient(circle at 8% 0%,rgba(34,211,238,.08),transparent 30%),linear-gradient(120deg,rgba(9,39,60,.90),rgba(9,25,49,.92));border-color:rgba(34,211,238,.34)}
+#performanceContent .mpv2-section-minihead{display:flex;align-items:end;justify-content:space-between;gap:16px;margin:0 2px 13px}
+#performanceContent .mpv2-section-minihead h2,#performanceContent .mpv2-panel-heading h2{margin:0;color:#fff;font-size:1.25rem;letter-spacing:-.02em}
+#performanceContent .mpv2-section-minihead>span{color:#7dd3fc;font-size:.72rem;font-weight:800}
+#performanceContent .mpv2-kpi-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+#performanceContent .mpv2-kpi-card{appearance:none;min-width:0;min-height:156px;padding:14px;border:1px solid rgba(56,189,248,.19);border-radius:15px;background:linear-gradient(145deg,rgba(5,18,34,.96),rgba(8,24,43,.90));color:inherit;text-align:left;cursor:pointer;transition:.15s ease;display:grid;grid-template-rows:auto auto auto auto;gap:8px}
+#performanceContent .mpv2-kpi-card:hover,#performanceContent .mpv2-kpi-card.active{transform:translateY(-1px);border-color:rgba(56,189,248,.55);background:linear-gradient(145deg,rgba(6,23,42,.98),rgba(9,29,51,.94))}
+#performanceContent .mpv2-kpi-card.active{box-shadow:0 0 0 1px rgba(56,189,248,.12),0 14px 28px rgba(2,6,23,.18)}
+#performanceContent .mpv2-kpi-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+#performanceContent .mpv2-model-icon{width:34px;height:34px;display:inline-grid;place-items:center;border-radius:9px;border:1px solid rgba(96,165,250,.30);background:linear-gradient(145deg,#183152,#111c38);color:#e7f2ff;font-size:.68rem;font-weight:950}
+#performanceContent .mpv2-model-icon.small{width:29px;height:29px;border-radius:8px;font-size:.60rem;flex:0 0 29px}
+#performanceContent .mpv2-kpi-window{color:#64748b;font-size:.58rem;font-weight:950;letter-spacing:.10em}
+#performanceContent .mpv2-kpi-main{display:flex;align-items:flex-end;justify-content:space-between;gap:8px}
+#performanceContent .mpv2-kpi-main strong{color:#f8fafc;font-size:2.0rem;line-height:1;font-weight:950;letter-spacing:-.045em;font-variant-numeric:tabular-nums}
+#performanceContent .mpv2-kpi-card:nth-child(4) .mpv2-kpi-main strong{color:#86efac}
+#performanceContent .mpv2-kpi-main span{color:#64748b;font-size:.54rem;font-weight:950;letter-spacing:.13em;padding-bottom:3px}
+#performanceContent .mpv2-kpi-name{color:#f8fafc;font-size:.88rem;font-weight:900}
+#performanceContent .mpv2-kpi-footer{display:flex;align-items:center;justify-content:space-between;gap:8px;color:#8292a8;font-size:.67rem}
+#performanceContent .mpv2-sample-pill{padding:4px 8px;border-radius:999px;border:1px solid rgba(148,163,184,.18);font-weight:800;white-space:nowrap}
+#performanceContent .mpv2-sample-pill.early{color:#fbbf24;border-color:rgba(251,191,36,.28);background:rgba(251,191,36,.06)}
+#performanceContent .mpv2-sample-pill.reliable{color:#86efac;border-color:rgba(52,211,153,.28);background:rgba(52,211,153,.06)}
+#performanceContent .mpv2-panel{padding:18px;min-width:0}
+#performanceContent .mpv2-panel-heading{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;margin-bottom:14px}
+#performanceContent .mpv2-panel-heading p{margin:5px 0 0;color:#94a3b8;font-size:.72rem;line-height:1.4}
+#performanceContent .mpv2-heading-pill{padding:7px 11px;border:1px solid rgba(56,189,248,.28);border-radius:999px;background:rgba(2,6,23,.34);color:#7dd3fc;font-size:.69rem;font-weight:850;white-space:nowrap}
+#performanceContent .mpv2-rolling-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+#performanceContent .mpv2-rolling-card{padding:14px;border:1px solid rgba(148,163,184,.12);border-radius:15px;background:rgba(2,6,23,.24)}
+#performanceContent .mpv2-rolling-title{display:flex;align-items:center;gap:9px;margin-bottom:12px;color:#f8fafc;font-size:.82rem}
+#performanceContent .mpv2-rank-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+#performanceContent .mpv2-rank-metrics>div{padding:10px;border:1px solid rgba(148,163,184,.09);border-radius:11px;background:rgba(15,23,42,.45)}
+#performanceContent .mpv2-rank-metrics span,#performanceContent .mpv2-rank-card>span{display:block;color:#64748b;font-size:.56rem;font-weight:950;letter-spacing:.10em}
+#performanceContent .mpv2-rank-metrics strong{display:block;margin:5px 0 4px;color:#f8fafc;font-size:1.18rem;font-weight:950}
+#performanceContent .mpv2-rank-metrics small{display:block;color:#8292a8;font-size:.60rem;line-height:1.25}
+#performanceContent .mpv2-rank-cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+#performanceContent .mpv2-rank-card{padding:16px;border:1px solid rgba(56,189,248,.14);border-radius:15px;background:linear-gradient(145deg,rgba(5,18,34,.88),rgba(8,24,43,.80))}
+#performanceContent .mpv2-rank-card strong{display:block;margin:8px 0 5px;color:#f8fafc;font-size:1.9rem;line-height:1;font-weight:950}
+#performanceContent .mpv2-rank-card div{color:#cbd5e1;font-size:.78rem;font-weight:800}
+#performanceContent .mpv2-rank-card small{display:block;margin-top:5px;color:#64748b;font-size:.65rem}
+#performanceContent .mpv2-trend-list{display:grid;gap:12px}
+#performanceContent .mpv2-trend-row{display:grid;grid-template-columns:180px minmax(0,1fr);gap:14px;align-items:center;padding:12px;border:1px solid rgba(148,163,184,.10);border-radius:14px;background:rgba(2,6,23,.20)}
+#performanceContent .mpv2-trend-label{display:flex;align-items:center;gap:9px;color:#f8fafc;font-size:.78rem}
+#performanceContent .mpv2-trend-days{display:flex;gap:8px;align-items:end;overflow-x:auto;padding-bottom:2px}
+#performanceContent .mpv2-day-cell{min-width:62px;text-align:center;color:#94a3b8}
+#performanceContent .mpv2-day-bar{height:48px;width:12px;margin:0 auto 5px;border-radius:999px;background:rgba(148,163,184,.10);display:flex;align-items:end;overflow:hidden}
+#performanceContent .mpv2-day-bar i{display:block;width:100%;border-radius:999px;background:linear-gradient(180deg,#38bdf8,#2563eb)}
+#performanceContent .mpv2-day-cell strong{display:block;color:#e2e8f0;font-size:.69rem}
+#performanceContent .mpv2-day-cell span{display:block;margin-top:2px;font-size:.56rem}
+#performanceContent .mpv2-cal-groups{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+#performanceContent .mpv2-cal-card{min-width:0;border:1px solid rgba(148,163,184,.11);border-radius:14px;background:rgba(2,6,23,.20);overflow:hidden}
+#performanceContent .mpv2-cal-title{display:flex;align-items:center;gap:9px;padding:11px 12px;border-bottom:1px solid rgba(148,163,184,.09);color:#f8fafc;font-size:.80rem}
+#performanceContent .mpv2-table-wrap,#performanceContent .mpv2-cal-table-wrap{overflow-x:auto}
+#performanceContent .mpv2-table{width:100%;border-collapse:collapse;min-width:720px;color:#cbd5e1;font-size:.72rem}
+#performanceContent .mpv2-table.compact{min-width:460px;font-size:.68rem}
+#performanceContent .mpv2-table th{padding:9px 10px;text-align:left;color:#64748b;font-size:.56rem;font-weight:950;letter-spacing:.08em;border-bottom:1px solid rgba(148,163,184,.10);white-space:nowrap}
+#performanceContent .mpv2-table td{padding:10px;border-bottom:1px solid rgba(148,163,184,.07);font-variant-numeric:tabular-nums;white-space:nowrap}
+#performanceContent .mpv2-table tr:last-child td{border-bottom:0}
+#performanceContent .mpv2-table td.positive{color:#86efac;font-weight:850}
+#performanceContent .mpv2-table td.warning{color:#fbbf24;font-weight:850}
+#performanceContent .mpv2-rate-cell{color:#f8fafc;font-size:.82rem;font-weight:900}
+#performanceContent .mpv2-bucket-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+#performanceContent .mpv2-bucket-card{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;align-items:center;gap:10px;padding:13px;border:1px solid rgba(148,163,184,.11);border-radius:14px;background:rgba(2,6,23,.20)}
+#performanceContent .mpv2-bucket-card>div strong,#performanceContent .mpv2-bucket-card>div span{display:block}
+#performanceContent .mpv2-bucket-card>div strong{color:#f8fafc;font-size:.78rem}
+#performanceContent .mpv2-bucket-card>div span{margin-top:2px;color:#64748b;font-size:.63rem}
+#performanceContent .mpv2-bucket-rate{text-align:right}
+#performanceContent .mpv2-bucket-rate strong{color:#f8fafc!important;font-size:1.05rem!important}
+#performanceContent .mpv2-rank-dot{display:inline-flex;align-items:center;justify-content:center;min-width:32px;height:25px;padding:0 7px;border-radius:999px;border:1px solid rgba(56,189,248,.23);background:rgba(56,189,248,.07);color:#7dd3fc;font-size:.64rem;font-weight:900}
+#performanceContent .mpv2-status{display:inline-flex;align-items:center;min-height:25px;padding:0 8px;border-radius:999px;border:1px solid rgba(148,163,184,.16);font-size:.60rem;font-weight:850;white-space:nowrap}
+#performanceContent .mpv2-status.good{color:#86efac;border-color:rgba(52,211,153,.28);background:rgba(52,211,153,.06)}
+#performanceContent .mpv2-status.warn{color:#fbbf24;border-color:rgba(251,191,36,.28);background:rgba(251,191,36,.06)}
+#performanceContent .mpv2-status.early{color:#94a3b8;background:rgba(148,163,184,.05)}
+#performanceContent .mpv2-early{color:#fbbf24;margin-left:3px}
+#performanceContent .mpv2-table.recent{min-width:1050px}
+#performanceContent .mpv2-book{display:block;margin-top:3px;color:#64748b;font-size:.58rem}
+#performanceContent .mpv2-result{display:inline-flex;align-items:center;justify-content:center;min-width:54px;height:26px;border-radius:999px;border:1px solid rgba(148,163,184,.16);font-size:.62rem;font-weight:950}
+#performanceContent .mpv2-result.win{color:#86efac;border-color:rgba(52,211,153,.34);background:rgba(52,211,153,.07)}
+#performanceContent .mpv2-result.loss{color:#fda4af;border-color:rgba(251,113,133,.32);background:rgba(251,113,133,.07)}
+#performanceContent .mpv2-result.push{color:#fde68a;border-color:rgba(251,191,36,.30);background:rgba(251,191,36,.06)}
+#performanceContent .mpv2-footer{display:flex;flex-wrap:wrap;gap:10px 18px;color:#64748b;font-size:.62rem;padding:0 3px 12px}
+#performanceContent .mpv2-loading-card,#performanceContent .mpv2-error-card{min-height:160px;display:flex;align-items:center;justify-content:center;gap:14px;padding:22px;border:1px solid var(--mp-border);border-radius:18px;background:rgba(15,23,42,.62);color:#e2e8f0;text-align:left}
+#performanceContent .mpv2-loading-card strong,#performanceContent .mpv2-loading-card span,#performanceContent .mpv2-error-card strong,#performanceContent .mpv2-error-card span{display:block}
+#performanceContent .mpv2-loading-card span,#performanceContent .mpv2-error-card span{margin-top:4px;color:#94a3b8;font-size:.72rem}
+#performanceContent .mpv2-spinner{width:30px;height:30px;border:3px solid rgba(148,163,184,.18);border-top-color:#38bdf8;border-radius:50%;animation:mpv2spin .8s linear infinite}
+#performanceContent .mpv2-error-card{flex-direction:column;text-align:center}
+#performanceContent .mpv2-error-card button{min-height:38px;padding:0 14px;border:1px solid rgba(56,189,248,.32);border-radius:10px;background:rgba(37,99,235,.25);color:#fff;font:inherit;font-weight:800;cursor:pointer}
+@keyframes mpv2spin{to{transform:rotate(360deg)}}
+@media(max-width:1180px){#performanceContent .mpv2-control-grid{grid-template-columns:1fr}#performanceContent .mpv2-kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr))}#performanceContent .mpv2-cal-groups,#performanceContent .mpv2-rolling-grid{grid-template-columns:1fr}}
+@media(max-width:760px){#performanceContent .mpv2-shell{gap:16px}#performanceContent .mpv2-control-card,#performanceContent .mpv2-panel,#performanceContent .mpv2-kpi-section{border-radius:16px;padding:12px}#performanceContent .mpv2-model-tabs{overflow-x:auto;justify-content:flex-start}#performanceContent .mpv2-model-tabs .mpv2-segment{flex:0 0 auto;min-width:92px}#performanceContent .mpv2-kpi-grid,#performanceContent .mpv2-bucket-grid{grid-template-columns:1fr}#performanceContent .mpv2-rank-cards{grid-template-columns:1fr}#performanceContent .mpv2-trend-row{grid-template-columns:1fr}#performanceContent .mpv2-panel-heading{align-items:flex-start;flex-direction:column}#performanceContent .mpv2-heading-pill{align-self:flex-start}}
+@media(max-width:430px){#performanceContent .mpv2-segment{font-size:.70rem;padding:0 8px}#performanceContent .mpv2-kpi-main strong{font-size:1.75rem}#performanceContent .mpv2-kpi-card{min-height:146px}}
