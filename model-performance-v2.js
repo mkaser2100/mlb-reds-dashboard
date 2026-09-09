@@ -285,15 +285,21 @@
       .sort((a,b)=>String(a.game_date).localeCompare(String(b.game_date)));
     if (!rows.length) return "";
 
+    // Keep the trend readable by plotting only the latest 21 dates.
+    // KPI and rolling windows remain unchanged.
+    const allDates = [...new Set(rows.map(r => r.game_date))].sort();
+    const dates = allDates.slice(-21);
+    const dateSet = new Set(dates);
+    rows = rows.filter(r => dateSet.has(r.game_date));
+
     const keys = state.model === "overview" ? MODEL_ORDER.filter(k => rows.some(r => r.model_key === k)) : [state.model];
-    const dates = [...new Set(rows.map(r => r.game_date))].sort();
     const W = 1000, H = 330, L = 58, R = 22, T = 24, B = 42;
     const plotW = W-L-R, plotH = H-T-B;
     const x = i => dates.length <= 1 ? L + plotW/2 : L + (i/(dates.length-1))*plotW;
     const y = v => T + (1-(Math.max(0,Math.min(100,Number(v)))/100))*plotH;
     const ticks = [0,25,50,75,100];
     const grid = ticks.map(v => `<g><line x1="${L}" y1="${y(v)}" x2="${W-R}" y2="${y(v)}" class="mpv2-chart-grid"/><text x="${L-12}" y="${y(v)+4}" text-anchor="end" class="mpv2-chart-axis">${v}%</text></g>`).join("");
-    const dateTicks = dates.map((d,i) => `<g><line x1="${x(i)}" y1="${T}" x2="${x(i)}" y2="${H-B}" class="mpv2-chart-vgrid"/><text x="${x(i)}" y="${H-13}" text-anchor="middle" class="mpv2-chart-axis">${esc(dateLabel(d))}</text></g>`).join("");
+    const dateTicks = dates.map((d,i) => `<g><line x1="${x(i)}" y1="${T}" x2="${x(i)}" y2="${H-B}" class="mpv2-chart-vgrid"/>${(i % 2 === 0 || i === dates.length - 1) ? `<text x="${x(i)}" y="${H-13}" text-anchor="middle" class="mpv2-chart-axis">${esc(dateLabel(d))}</text>` : ""}</g>`).join("");
     const series = keys.map(key => {
       const byDate = new Map(rows.filter(r=>r.model_key===key).map(r=>[r.game_date,r]));
       const pts = dates.map((d,i) => byDate.has(d) ? {x:x(i), y:y(byDate.get(d).hit_rate_pct), r:byDate.get(d)} : null).filter(Boolean);
@@ -311,7 +317,7 @@
       return `<div class="mpv2-trend-legend-row"><span class="mpv2-trend-swatch" style="--trend-color:${TREND_COLORS[key]}"></span><div><strong>${esc(MODEL_META[key]?.label||key)}</strong><span>${wins}–${losses} record</span></div><b>${pct(rate)}</b></div>`;
     }).join("");
 
-    return `<section class="mpv2-panel mpv2-trend-panel"><div class="mpv2-trend-head"><div><span class="mpv2-kicker">MARKET EDGE · PERFORMANCE TREND</span><h2>Performance Trend</h2><p>Daily Top-${cutoff} recommendation hit rate. The chart extends automatically as new results are scored.</p></div><div class="mpv2-trend-cutoffs" aria-label="Trend rank cutoff">${[1,5,10].map(c=>`<button type="button" class="${cutoff===c?'active':''}" data-mpv2-trend-cutoff="${c}">Top ${c}</button>`).join('')}</div></div>
+    return `<section class="mpv2-panel mpv2-trend-panel"><div class="mpv2-trend-head"><div><span class="mpv2-kicker">MARKET EDGE · PERFORMANCE TREND</span><h2>Performance Trend</h2><p>Daily Top-${cutoff} recommendation hit rate over the latest 21 days. The chart extends automatically as new results are scored.</p></div><div class="mpv2-trend-cutoffs" aria-label="Trend rank cutoff">${[1,5,10].map(c=>`<button type="button" class="${cutoff===c?'active':''}" data-mpv2-trend-cutoff="${c}">Top ${c}</button>`).join('')}</div></div>
       <div class="mpv2-trend-chart-layout"><div class="mpv2-chart-wrap"><svg class="mpv2-line-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Model performance trend chart">${grid}${dateTicks}<line x1="${L}" y1="${H-B}" x2="${W-R}" y2="${H-B}" class="mpv2-chart-base"/>${series}</svg></div><aside class="mpv2-trend-legend">${legend}</aside></div></section>`;
   }
 
