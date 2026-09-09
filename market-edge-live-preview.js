@@ -1,6 +1,6 @@
 /* =========================================================
    Market Edge Live Preview
-   Build: market-edge-live-preview-20260908b
+   Build: market-edge-live-preview-20260908c
 
    SAFE ROLLOUT CONTRACT
    - Does not modify market-edge-v2.js.
@@ -11,7 +11,7 @@
 (() => {
   "use strict";
 
-  const BUILD = "market-edge-live-preview-20260908b";
+  const BUILD = "market-edge-live-preview-20260908c";
   const ENABLED = new URLSearchParams(window.location.search).get("meLive") === "1";
   if (!ENABLED) {
     console.info(`Market Edge Live Preview dormant: ${BUILD}`);
@@ -416,15 +416,25 @@
   }
 
   function enforceLiveOnlyLayout(root, control, host) {
-    // Live owns the content area while active. Keep only the shared controls
-    // and Live preview host visible; hide stable Daily Summary/opportunity sections.
-    [...root.children].forEach(child => {
-      const keep = child === control || child === host || child.contains(control);
+    // Stable Market Edge renders one .mev2-shell under #marketEdgeContent.
+    // Daily Summary, opportunities table, and footer are children of that shell,
+    // so enforce visibility at the shell level (not root.children).
+    const shell = control?.closest(".mev2-shell") || root.querySelector(".mev2-shell");
+    if (!shell) return;
+
+    [...shell.children].forEach(child => {
+      const keep = child === control || child === host;
       if (keep) {
         child.style.removeProperty("display");
       } else {
         child.style.display = "none";
       }
+    });
+
+    // Explicit selectors are intentional regression protection if the stable shell
+    // gains wrappers later. These are the two redundant sections requested removed.
+    shell.querySelectorAll(".mev2-summary, .mev2-board, .mev2-footer").forEach(node => {
+      if (node !== host && !host?.contains(node)) node.style.display = "none";
     });
   }
 
@@ -477,7 +487,15 @@
     if (!root) return;
     state.active = false;
     root.querySelector("#meLivePreviewHost")?.remove();
-    [...root.children].forEach(child => child.style.removeProperty("display"));
+
+    // Restore the stable shell exactly when leaving Live.
+    const shell = root.querySelector(".mev2-shell");
+    if (shell) {
+      [...shell.children].forEach(child => child.style.removeProperty("display"));
+      shell.querySelectorAll(".mev2-summary, .mev2-board, .mev2-footer").forEach(node =>
+        node.style.removeProperty("display")
+      );
+    }
     installLiveButton();
   }
 
@@ -523,6 +541,24 @@
     }, true);
   }
 
+  function installStableRerenderGuard() {
+    const root = document.getElementById("marketEdgeContent");
+    if (!root) return;
+
+    const observer = new MutationObserver(() => {
+      if (!state.active) return;
+      requestAnimationFrame(() => {
+        if (!state.active) return;
+        installLiveButton();
+        renderPreview();
+      });
+    });
+
+    // Stable Market Edge render() replaces the root's .mev2-shell child.
+    // Watching only direct children avoids reacting to Live-card rendering itself.
+    observer.observe(root, { childList: true });
+  }
+
   function boot() {
     const root = document.getElementById("marketEdgeContent");
     if (!root) return;
@@ -530,6 +566,7 @@
     syncControlsFromDom();
     installLiveButton();
     installControlSafety();
+    installStableRerenderGuard();
 
     window.runMarketEdgeLivePreviewSelfTest = () => {
       const rows = visibleRows();
@@ -548,11 +585,11 @@
           const root = document.getElementById("marketEdgeContent");
           const host = root?.querySelector("#meLivePreviewHost");
           const control = root?.querySelector(".mev2-control-card");
-          if (!state.active || !root || !host || !control) return true;
-          return [...root.children].every(child =>
-            child === control || child === host || child.contains(control) ||
-            getComputedStyle(child).display === "none"
-          );
+          const shell = control?.closest(".mev2-shell");
+          if (!state.active || !root || !host || !control || !shell) return true;
+          const redundant = [...shell.querySelectorAll(".mev2-summary, .mev2-board, .mev2-footer")]
+            .filter(node => node !== host && !host.contains(node));
+          return redundant.every(node => getComputedStyle(node).display === "none");
         })()
       };
       tests.pass = tests.enabledByQueryParam && tests.stableCoreUntouched &&
