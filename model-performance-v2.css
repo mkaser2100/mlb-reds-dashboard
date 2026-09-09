@@ -1,6 +1,6 @@
 /* =========================================================
    MLB Prop Intelligence — Model Performance V2
-   Build: model-performance-v2-20260909b
+   Build: model-performance-v2-20260909c
    ========================================================= */
 #performanceContent {
   --mp-border: rgba(148,163,184,.16);
@@ -139,3 +139,131 @@
 #performanceContent .mpv2-trend-legend-row b{color:#f8fafc;font-size:1.03rem;font-variant-numeric:tabular-nums}
 @media(max-width:1050px){#performanceContent .mpv2-trend-chart-layout{grid-template-columns:1fr}#performanceContent .mpv2-trend-legend{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 16px}#performanceContent .mpv2-trend-legend-row:nth-last-child(2){border-bottom:0}}
 @media(max-width:700px){#performanceContent .mpv2-trend-head{flex-direction:column}#performanceContent .mpv2-trend-cutoffs{width:100%}#performanceContent .mpv2-trend-cutoffs button{flex:1}.mpv2-chart-wrap{overflow-x:auto}#performanceContent .mpv2-line-chart{min-width:680px}#performanceContent .mpv2-trend-legend{grid-template-columns:1fr}#performanceContent .mpv2-trend-legend-row:nth-last-child(2){border-bottom:1px solid rgba(148,163,184,.12)}}
+
+
+/* ===== 20260909c · Wireframe KPI scorecards + week-over-week momentum ===== */
+#performanceContent .mpv2-kpi-section{
+  padding:0;
+  border:0;
+  border-radius:0;
+  background:transparent;
+  box-shadow:none;
+}
+#performanceContent .mpv2-section-minihead{display:none}
+#performanceContent .mpv2-kpi-grid{
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:12px;
+}
+#performanceContent .mpv2-kpi-card{
+  min-height:160px;
+  padding:17px 18px;
+  border:1px solid rgba(14,165,233,.30);
+  border-radius:15px;
+  background:
+    radial-gradient(circle at 12% 10%,rgba(14,165,233,.10),transparent 34%),
+    linear-gradient(145deg,rgba(4,25,47,.97),rgba(6,20,38,.96));
+  display:grid;
+  grid-template-columns:58px minmax(0,1fr);
+  grid-template-rows:1fr;
+  gap:13px;
+  align-items:start;
+}
+#performanceContent .mpv2-kpi-card:hover,
+#performanceContent .mpv2-kpi-card.active{
+  transform:translateY(-1px);
+  border-color:rgba(56,189,248,.58);
+  background:
+    radial-gradient(circle at 12% 10%,rgba(14,165,233,.14),transparent 36%),
+    linear-gradient(145deg,rgba(4,29,54,.99),rgba(7,24,44,.98));
+}
+#performanceContent .mpv2-kpi-card.active{
+  box-shadow:0 0 0 1px rgba(56,189,248,.11),0 14px 30px rgba(2,6,23,.20);
+}
+#performanceContent .mpv2-kpi-icon-wrap{
+  width:54px;
+  height:54px;
+  border-radius:50%;
+  display:grid;
+  place-items:center;
+  border:1px solid rgba(14,165,233,.28);
+  background:linear-gradient(145deg,rgba(18,54,91,.92),rgba(9,34,63,.96));
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.04);
+}
+#performanceContent .mpv2-kpi-icon-wrap svg{width:38px;height:38px;display:block}
+#performanceContent .mpv2-k-letter{
+  color:#f8fafc;
+  font-size:1.75rem;
+  font-weight:950;
+  line-height:1;
+  letter-spacing:-.05em;
+}
+#performanceContent .mpv2-kpi-content{min-width:0}
+#performanceContent .mpv2-kpi-label{
+  color:#dbeafe;
+  font-size:.67rem;
+  font-weight:950;
+  letter-spacing:.10em;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+#performanceContent .mpv2-kpi-label span{color:#94a3b8}
+#performanceContent .mpv2-kpi-rate-row{
+  margin-top:10px;
+  display:flex;
+  align-items:center;
+  gap:10px;
+  flex-wrap:wrap;
+}
+#performanceContent .mpv2-kpi-rate-row>strong{
+  color:#f8fafc;
+  font-size:2.12rem;
+  line-height:.95;
+  font-weight:950;
+  letter-spacing:-.045em;
+  font-variant-numeric:tabular-nums;
+}
+#performanceContent .mpv2-kpi-wow{
+  display:inline-flex;
+  align-items:center;
+  min-height:24px;
+  font-size:.70rem;
+  font-weight:950;
+  white-space:nowrap;
+  font-variant-numeric:tabular-nums;
+}
+#performanceContent .mpv2-kpi-wow.up{color:#34d399}
+#performanceContent .mpv2-kpi-wow.down{color:#fb7185}
+#performanceContent .mpv2-kpi-wow.flat{color:#fbbf24}
+#performanceContent .mpv2-kpi-wow.neutral{color:#64748b}
+#performanceContent .mpv2-kpi-period{
+  margin-top:7px;
+  color:#94a3b8;
+  font-size:.70rem;
+}
+#performanceContent .mpv2-kpi-bottom{
+  margin-top:8px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  color:#a9b8cb;
+  font-size:.69rem;
+  font-weight:800;
+  font-variant-numeric:tabular-nums;
+}
+#performanceContent .mpv2-kpi-bottom span:last-child{color:#7f91a9;white-space:nowrap}
+@media(max-width:1180px){
+  #performanceContent .mpv2-kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(max-width:760px){
+  #performanceContent .mpv2-kpi-grid{grid-template-columns:1fr}
+  #performanceContent .mpv2-kpi-card{min-height:148px}
+}
+@media(max-width:430px){
+  #performanceContent .mpv2-kpi-card{grid-template-columns:48px minmax(0,1fr);padding:14px}
+  #performanceContent .mpv2-kpi-icon-wrap{width:46px;height:46px}
+  #performanceContent .mpv2-kpi-icon-wrap svg{width:33px;height:33px}
+  #performanceContent .mpv2-kpi-rate-row>strong{font-size:1.86rem}
+  #performanceContent .mpv2-kpi-wow{font-size:.64rem}
+}

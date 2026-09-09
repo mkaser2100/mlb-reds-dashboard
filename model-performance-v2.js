@@ -1,12 +1,12 @@
 /* =========================================================
    MLB Prop Intelligence — Model Performance V2
-   Build: model-performance-v2-20260909b
+   Build: model-performance-v2-20260909c
    Owns only #performanceView and reads the compact V2 cache.
    ========================================================= */
 (() => {
   "use strict";
 
-  const BUILD = "model-performance-v2-20260909b";
+  const BUILD = "model-performance-v2-20260909c";
   const CACHE_TABLE = "mlb_model_performance_page_cache_v2";
   const PROJECT_URL = "https://squcmdsivnnxzblsfciu.supabase.co";
   const PUBLISHABLE_KEY = "sb_publishable_pumFxQJ7pYyRC8lrjSvtZA_x63TVYtq";
@@ -128,6 +128,54 @@
     root.innerHTML = `<div class="mpv2-shell"><section class="mpv2-loading-card"><div class="mpv2-spinner"></div><div><strong>Loading Model Performance...</strong><span>Reading the compact V2 performance cache.</span></div></section></div>`;
   }
 
+
+  function modelIconSvg(key) {
+    if (key === "hit_v3") {
+      return `<svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="15" fill="#f8fafc"/><path d="M14.8 13.8c4.2 4.5 5.9 9.3 5.1 14.4M33.2 13.8c-4.2 4.5-5.9 9.3-5.1 14.4M15.2 34.1c3.9-3.3 5.5-7.3 4.8-12M32.8 34.1c-3.9-3.3-5.5-7.3-4.8-12" fill="none" stroke="#ef4444" stroke-width="2.1" stroke-linecap="round"/><path d="M18.2 18.2l-2.3 1.3M19.3 21.5l-2.4 1.1M29.8 18.2l2.3 1.3M28.7 21.5l2.4 1.1M18.5 29.5l-2.2-1.2M29.5 29.5l2.2-1.2" stroke="#ef4444" stroke-width="1.4" stroke-linecap="round"/></svg>`;
+    }
+    if (key === "total_bases_2plus") {
+      return `<svg viewBox="0 0 48 48" aria-hidden="true"><path d="M13 34.5L30.8 16.7c2.2-2.2 4.8-2.7 6.2-1.2 1.5 1.5 1 4-1.2 6.2L18 39.5c-1.4 1.4-3.6 1.4-5 0s-1.4-3.6 0-5Z" fill="#d6a06a"/><path d="M28.8 18.7l5.6 5.6" stroke="#f4c38e" stroke-width="2"/><path d="M11.7 38.3l-2.3 2.3" stroke="#e5e7eb" stroke-width="2.4" stroke-linecap="round"/></svg>`;
+    }
+    if (key === "home_run_1plus") {
+      return `<svg viewBox="0 0 48 48" aria-hidden="true"><path d="M24 8.5l11.5 4.2v10.8c0 7-4.4 12.9-11.5 16-7.1-3.1-11.5-9-11.5-16V12.7L24 8.5Z" fill="#f8fafc" stroke="#ef4444" stroke-width="1.6"/><circle cx="24" cy="21" r="8.3" fill="#fff"/><path d="M17.4 16.5c2.4 2.7 3.3 5.6 2.9 8.7M30.6 16.5c-2.4 2.7-3.3 5.6-2.9 8.7" fill="none" stroke="#ef4444" stroke-width="1.5" stroke-linecap="round"/></svg>`;
+    }
+    return `<span class="mpv2-k-letter" aria-hidden="true">K</span>`;
+  }
+
+  function weekOverWeekFor(modelKey) {
+    const daily = Array.isArray(state.sections.daily) ? state.sections.daily : [];
+    const rows = daily
+      .filter(r => r.model_key === modelKey && Number(r.cutoff) === 5 && r.game_date)
+      .sort((a,b) => String(a.game_date).localeCompare(String(b.game_date)));
+    if (!rows.length) return { delta: null, currentRate: null, previousRate: null, currentPlays: 0, previousPlays: 0 };
+
+    const latest = new Date(`${rows[rows.length - 1].game_date}T12:00:00Z`);
+    const currentStart = new Date(latest); currentStart.setUTCDate(currentStart.getUTCDate() - 6);
+    const previousEnd = new Date(currentStart); previousEnd.setUTCDate(previousEnd.getUTCDate() - 1);
+    const previousStart = new Date(previousEnd); previousStart.setUTCDate(previousStart.getUTCDate() - 6);
+
+    const inRange = (d, start, end) => {
+      const dt = new Date(`${d}T12:00:00Z`);
+      return dt >= start && dt <= end;
+    };
+    const aggregate = subset => {
+      const wins = subset.reduce((s,r)=>s+(num(r.wins)||0),0);
+      const losses = subset.reduce((s,r)=>s+(num(r.losses)||0),0);
+      const plays = wins + losses;
+      return { wins, losses, plays, rate: plays ? (wins / plays) * 100 : null };
+    };
+
+    const cur = aggregate(rows.filter(r => inRange(r.game_date, currentStart, latest)));
+    const prev = aggregate(rows.filter(r => inRange(r.game_date, previousStart, previousEnd)));
+    return {
+      delta: cur.rate != null && prev.rate != null ? cur.rate - prev.rate : null,
+      currentRate: cur.rate,
+      previousRate: prev.rate,
+      currentPlays: cur.plays,
+      previousPlays: prev.plays
+    };
+  }
+
   function kpiCards() {
     const rows = Array.isArray(state.sections.kpis) ? state.sections.kpis : [];
     return MODEL_ORDER.map(key => {
@@ -135,12 +183,33 @@
       const meta = MODEL_META[key];
       const active = state.model === key;
       const rate = num(r.hit_rate_pct);
-      const reliableClass = (num(r.plays) || 0) >= 20 ? "reliable" : "early";
+      const wow = weekOverWeekFor(key);
+      const delta = num(wow.delta);
+      const deltaClass = delta == null ? "neutral" : delta > 0 ? "up" : delta < 0 ? "down" : "flat";
+      const arrow = delta == null ? "•" : delta > 0 ? "▲" : delta < 0 ? "▼" : "•";
+      const deltaText = delta == null ? "— WoW" : `${arrow} ${delta > 0 ? "+" : ""}${delta.toFixed(1)} pts WoW`;
+      const pushes = num(r.pushes) || 0;
+      const wins = num(r.wins) || 0;
+      const losses = num(r.losses) || 0;
+      const plays = num(r.plays) || 0;
+      const wowTitle = delta == null
+        ? "Week-over-week change is not available until both 7-day windows contain completed plays."
+        : `Current 7 days: ${wow.currentRate.toFixed(1)}% (${wow.currentPlays} plays) · Prior 7 days: ${wow.previousRate.toFixed(1)}% (${wow.previousPlays} plays)`;
+
       return `<button type="button" class="mpv2-kpi-card ${active ? "active" : ""}" data-mpv2-model="${key}">
-        <div class="mpv2-kpi-top"><span class="mpv2-model-icon">${meta.icon}</span><span class="mpv2-kpi-window">TOP 5 · 30D</span></div>
-        <div class="mpv2-kpi-main"><strong>${rate == null ? "—" : `${rate.toFixed(1)}%`}</strong><span>HIT RATE</span></div>
-        <div class="mpv2-kpi-name">${esc(meta.label)}</div>
-        <div class="mpv2-kpi-footer"><span>${num(r.wins) || 0}–${num(r.losses) || 0} record</span><span class="mpv2-sample-pill ${reliableClass}">${num(r.plays) || 0} plays</span></div>
+        <div class="mpv2-kpi-icon-wrap">${modelIconSvg(key)}</div>
+        <div class="mpv2-kpi-content">
+          <div class="mpv2-kpi-label">${esc(meta.label).toUpperCase()} <span>· TOP 5</span></div>
+          <div class="mpv2-kpi-rate-row">
+            <strong>${rate == null ? "—" : `${rate.toFixed(1)}%`}</strong>
+            <span class="mpv2-kpi-wow ${deltaClass}" title="${esc(wowTitle)}">${esc(deltaText)}</span>
+          </div>
+          <div class="mpv2-kpi-period">Last 30 Days</div>
+          <div class="mpv2-kpi-bottom">
+            <span>${wins}–${losses}${pushes ? `–${pushes}` : ""}</span>
+            <span>${plays} plays</span>
+          </div>
+        </div>
       </button>`;
     }).join("");
   }
