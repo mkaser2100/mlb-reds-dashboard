@@ -1,6 +1,6 @@
 /* =========================================================
    Market Edge Live
-   Build: market-edge-live-production-20260909a
+   Build: market-edge-live-production-20260909b
 
    SAFE ROLLOUT CONTRACT
    - Does not modify market-edge-v2.js.
@@ -11,7 +11,7 @@
 (() => {
   "use strict";
 
-  const BUILD = "market-edge-live-production-20260909a";
+  const BUILD = "market-edge-live-production-20260909b";
 
   const MARKET_TABLE = "mlb_market_edge_board_public_cache";
   const BATTER_LIVE_TABLE = "mlb_market_edge_batter_live_status";
@@ -492,6 +492,11 @@
       );
     }
     installLiveButton();
+
+    // The stable scope handler runs after our capture-phase listener and may
+    // replace this control card. Re-check on the next frame as a deterministic
+    // backup to the shell observer.
+    requestAnimationFrame(installLiveButton);
   }
 
   async function loadAndRender() {
@@ -541,11 +546,13 @@
     if (!root) return;
 
     const observer = new MutationObserver(() => {
-      if (!state.active) return;
+      // Stable Market Edge replaces the entire .mev2-shell after scope/prop/rank
+      // changes. That replacement destroys our injected Live button even when
+      // the user has just left Live. Always re-install the button on the new
+      // control card; only rebuild Live content when Live remains active.
       requestAnimationFrame(() => {
-        if (!state.active) return;
         installLiveButton();
-        renderPreview();
+        if (state.active) renderPreview();
       });
     });
 
@@ -576,6 +583,11 @@
         visibleRows: rows.length,
         liveRowsValid: rows.every(isLive),
         max25: rows.length <= 25,
+        liveButtonPresent: (() => {
+          const root = document.getElementById("marketEdgeContent");
+          const control = root?.querySelector(".mev2-control-card");
+          return !control || !!control.querySelector('[data-me-live-preview="1"]');
+        })(),
         liveOnlyLayout: (() => {
           const root = document.getElementById("marketEdgeContent");
           const host = root?.querySelector("#meLivePreviewHost");
@@ -588,7 +600,7 @@
         })()
       };
       tests.pass = tests.availableOnMainUrl && tests.stableCoreUntouched &&
-        tests.liveRowsValid && tests.max25 && tests.liveOnlyLayout;
+        tests.liveRowsValid && tests.max25 && tests.liveButtonPresent && tests.liveOnlyLayout;
       console.table(tests);
       return tests;
     };
