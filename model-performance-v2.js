@@ -1,12 +1,12 @@
 /* =========================================================
    MLB Prop Intelligence — Model Performance V2
-   Build: model-performance-v2-20260909d
+   Build: model-performance-v2-20260909f
    Owns only #performanceView and reads the compact V2 cache.
    ========================================================= */
 (() => {
   "use strict";
 
-  const BUILD = "model-performance-v2-20260909d";
+  const BUILD = "model-performance-v2-20260909f";
   const CACHE_TABLE = "mlb_model_performance_page_cache_v2";
   const PROJECT_URL = "https://squcmdsivnnxzblsfciu.supabase.co";
   const PUBLISHABLE_KEY = "sb_publishable_pumFxQJ7pYyRC8lrjSvtZA_x63TVYtq";
