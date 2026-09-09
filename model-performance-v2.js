@@ -1,12 +1,12 @@
 /* =========================================================
    MLB Prop Intelligence — Model Performance V2
-   Build: model-performance-v2-20260909c
+   Build: model-performance-v2-20260909d
    Owns only #performanceView and reads the compact V2 cache.
    ========================================================= */
 (() => {
   "use strict";
 
-  const BUILD = "model-performance-v2-20260909c";
+  const BUILD = "model-performance-v2-20260909d";
   const CACHE_TABLE = "mlb_model_performance_page_cache_v2";
   const PROJECT_URL = "https://squcmdsivnnxzblsfciu.supabase.co";
   const PUBLISHABLE_KEY = "sb_publishable_pumFxQJ7pYyRC8lrjSvtZA_x63TVYtq";
@@ -134,10 +134,27 @@
       return `<svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="15" fill="#f8fafc"/><path d="M14.8 13.8c4.2 4.5 5.9 9.3 5.1 14.4M33.2 13.8c-4.2 4.5-5.9 9.3-5.1 14.4M15.2 34.1c3.9-3.3 5.5-7.3 4.8-12M32.8 34.1c-3.9-3.3-5.5-7.3-4.8-12" fill="none" stroke="#ef4444" stroke-width="2.1" stroke-linecap="round"/><path d="M18.2 18.2l-2.3 1.3M19.3 21.5l-2.4 1.1M29.8 18.2l2.3 1.3M28.7 21.5l2.4 1.1M18.5 29.5l-2.2-1.2M29.5 29.5l2.2-1.2" stroke="#ef4444" stroke-width="1.4" stroke-linecap="round"/></svg>`;
     }
     if (key === "total_bases_2plus") {
-      return `<svg viewBox="0 0 48 48" aria-hidden="true"><path d="M13 34.5L30.8 16.7c2.2-2.2 4.8-2.7 6.2-1.2 1.5 1.5 1 4-1.2 6.2L18 39.5c-1.4 1.4-3.6 1.4-5 0s-1.4-3.6 0-5Z" fill="#d6a06a"/><path d="M28.8 18.7l5.6 5.6" stroke="#f4c38e" stroke-width="2"/><path d="M11.7 38.3l-2.3 2.3" stroke="#e5e7eb" stroke-width="2.4" stroke-linecap="round"/></svg>`;
+      return `<svg viewBox="0 0 48 48" aria-hidden="true">
+        <g transform="translate(24 24) rotate(45) translate(-24 -24)">
+          <rect x="13.5" y="13.5" width="21" height="21" rx="2.6" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.5"/>
+          <rect x="16.8" y="16.8" width="14.4" height="14.4" rx="1.5" fill="#e5e7eb"/>
+          <path d="M18 29.5h12" stroke="#cbd5e1" stroke-width="1.2" stroke-linecap="round"/>
+        </g>
+      </svg>`;
     }
     if (key === "home_run_1plus") {
-      return `<svg viewBox="0 0 48 48" aria-hidden="true"><path d="M24 8.5l11.5 4.2v10.8c0 7-4.4 12.9-11.5 16-7.1-3.1-11.5-9-11.5-16V12.7L24 8.5Z" fill="#f8fafc" stroke="#ef4444" stroke-width="1.6"/><circle cx="24" cy="21" r="8.3" fill="#fff"/><path d="M17.4 16.5c2.4 2.7 3.3 5.6 2.9 8.7M30.6 16.5c-2.4 2.7-3.3 5.6-2.9 8.7" fill="none" stroke="#ef4444" stroke-width="1.5" stroke-linecap="round"/></svg>`;
+      return `<svg viewBox="0 0 48 48" aria-hidden="true">
+        <g fill="none" stroke-linecap="round">
+          <path d="M24 26V10M24 18L17 12M24 18l7-6M20 24l-10-3M28 24l10-3M19 27l-8 7M29 27l8 7" stroke="#fb7185" stroke-width="2.1"/>
+          <path d="M24 27l-4 11M24 27l4 11M24 27v12" stroke="#38bdf8" stroke-width="1.9"/>
+          <path d="M15 11l-1.4-3M15 11l-3 1.2M33 11l1.4-3M33 11l3 1.2M9.5 20.5l-3-1M38.5 20.5l3-1" stroke="#fbbf24" stroke-width="1.7"/>
+        </g>
+        <circle cx="24" cy="9" r="1.6" fill="#fbbf24"/>
+        <circle cx="13" cy="10" r="1.2" fill="#38bdf8"/>
+        <circle cx="35" cy="10" r="1.2" fill="#38bdf8"/>
+        <circle cx="8" cy="32" r="1.2" fill="#fbbf24"/>
+        <circle cx="40" cy="32" r="1.2" fill="#fbbf24"/>
+      </svg>`;
     }
     return `<span class="mpv2-k-letter" aria-hidden="true">K</span>`;
   }
