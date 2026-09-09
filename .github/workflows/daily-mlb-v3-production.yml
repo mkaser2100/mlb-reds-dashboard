@@ -63,8 +63,17 @@ jobs:
       game_date: ${{ inputs.prediction_date || '' }}
     secrets: inherit
 
+  v3_model:
+    needs: [actuals, features]
+    uses: ./.github/workflows/run-v3-hit-model-model.yml
+    with:
+      target_date: ${{ inputs.prediction_date || '' }}
+    secrets: inherit
+
   pitcher_k_features:
-    needs: features
+    # Wait for v3_model because it publishes the game/start context
+    # that Pitcher-K features depend on.
+    needs: v3_model
     uses: ./.github/workflows/refresh-mlb-pitcher-k-features.yml
     with:
       game_date: ${{ inputs.prediction_date || '' }}
@@ -77,13 +86,6 @@ jobs:
     with:
       game_date: ${{ inputs.prediction_date || '' }}
       allow_after_start: false
-    secrets: inherit
-
-  v3_model:
-    needs: [actuals, features]
-    uses: ./.github/workflows/run-v3-hit-model-model.yml
-    with:
-      target_date: ${{ inputs.prediction_date || '' }}
     secrets: inherit
 
   power_models:
