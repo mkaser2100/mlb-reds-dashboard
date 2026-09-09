@@ -1,6 +1,6 @@
 /* =========================================================
    MLB Prop Intelligence — Model Performance V2
-   Build: model-performance-v2-20260909a
+   Build: model-performance-v2-20260909b
    ========================================================= */
 #performanceContent {
   --mp-border: rgba(148,163,184,.16);
@@ -110,3 +110,32 @@
 @media(max-width:1180px){#performanceContent .mpv2-control-grid{grid-template-columns:1fr}#performanceContent .mpv2-kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr))}#performanceContent .mpv2-cal-groups,#performanceContent .mpv2-rolling-grid{grid-template-columns:1fr}}
 @media(max-width:760px){#performanceContent .mpv2-shell{gap:16px}#performanceContent .mpv2-control-card,#performanceContent .mpv2-panel,#performanceContent .mpv2-kpi-section{border-radius:16px;padding:12px}#performanceContent .mpv2-model-tabs{overflow-x:auto;justify-content:flex-start}#performanceContent .mpv2-model-tabs .mpv2-segment{flex:0 0 auto;min-width:92px}#performanceContent .mpv2-kpi-grid,#performanceContent .mpv2-bucket-grid{grid-template-columns:1fr}#performanceContent .mpv2-rank-cards{grid-template-columns:1fr}#performanceContent .mpv2-trend-row{grid-template-columns:1fr}#performanceContent .mpv2-panel-heading{align-items:flex-start;flex-direction:column}#performanceContent .mpv2-heading-pill{align-self:flex-start}}
 @media(max-width:430px){#performanceContent .mpv2-segment{font-size:.70rem;padding:0 8px}#performanceContent .mpv2-kpi-main strong{font-size:1.75rem}#performanceContent .mpv2-kpi-card{min-height:146px}}
+
+
+/* ===== 20260909b · Market Edge line-chart trend ===== */
+#performanceContent .mpv2-trend-panel{overflow:hidden;background:radial-gradient(circle at 10% 0%,rgba(14,165,233,.07),transparent 34%),linear-gradient(180deg,rgba(17,30,51,.88),rgba(10,21,39,.90));border-color:rgba(56,189,248,.20)}
+#performanceContent .mpv2-trend-head{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;margin-bottom:16px}
+#performanceContent .mpv2-trend-head h2{margin:0;color:#f8fafc;font-size:1.25rem;letter-spacing:-.02em}
+#performanceContent .mpv2-trend-head p{margin:5px 0 0;color:#94a3b8;font-size:.72rem;line-height:1.5}
+#performanceContent .mpv2-trend-cutoffs{display:flex;gap:3px;padding:3px;border:1px solid rgba(56,189,248,.18);border-radius:12px;background:rgba(2,6,23,.40);flex:0 0 auto}
+#performanceContent .mpv2-trend-cutoffs button{min-width:64px;height:36px;border:0;border-radius:9px;background:transparent;color:#94a3b8;font:inherit;font-size:.68rem;font-weight:900;cursor:pointer}
+#performanceContent .mpv2-trend-cutoffs button:hover{color:#e2e8f0;background:rgba(56,189,248,.06)}
+#performanceContent .mpv2-trend-cutoffs button.active{color:#fff;background:linear-gradient(180deg,#0ea5e9,#2563eb);box-shadow:0 5px 14px rgba(14,165,233,.18)}
+#performanceContent .mpv2-trend-chart-layout{display:grid;grid-template-columns:minmax(0,1fr) 245px;gap:18px;align-items:stretch}
+#performanceContent .mpv2-chart-wrap{min-width:0;min-height:330px;padding:4px 2px 0;border-radius:14px;background:linear-gradient(180deg,rgba(2,12,27,.22),rgba(2,6,23,.10))}
+#performanceContent .mpv2-line-chart{display:block;width:100%;height:330px;overflow:visible}
+#performanceContent .mpv2-chart-grid{stroke:rgba(100,170,210,.20);stroke-width:1;stroke-dasharray:5 5}
+#performanceContent .mpv2-chart-vgrid{stroke:rgba(100,170,210,.10);stroke-width:1}
+#performanceContent .mpv2-chart-base{stroke:rgba(186,230,253,.55);stroke-width:1.25}
+#performanceContent .mpv2-chart-axis{fill:#8fa3bb;font-size:13px;font-weight:700}
+#performanceContent .mpv2-chart-line{filter:drop-shadow(0 2px 4px rgba(0,0,0,.24))}
+#performanceContent .mpv2-trend-legend{align-self:center;border:1px solid rgba(56,189,248,.20);border-radius:15px;background:rgba(3,13,29,.46);padding:4px 14px}
+#performanceContent .mpv2-trend-legend-row{display:grid;grid-template-columns:12px minmax(0,1fr) auto;gap:10px;align-items:center;min-height:66px;border-bottom:1px solid rgba(148,163,184,.12)}
+#performanceContent .mpv2-trend-legend-row:last-child{border-bottom:0}
+#performanceContent .mpv2-trend-swatch{width:11px;height:11px;border-radius:50%;background:var(--trend-color);box-shadow:0 0 10px color-mix(in srgb,var(--trend-color) 38%,transparent)}
+#performanceContent .mpv2-trend-legend-row div strong,#performanceContent .mpv2-trend-legend-row div span{display:block}
+#performanceContent .mpv2-trend-legend-row div strong{color:#eaf3ff;font-size:.74rem}
+#performanceContent .mpv2-trend-legend-row div span{margin-top:3px;color:#64748b;font-size:.58rem}
+#performanceContent .mpv2-trend-legend-row b{color:#f8fafc;font-size:1.03rem;font-variant-numeric:tabular-nums}
+@media(max-width:1050px){#performanceContent .mpv2-trend-chart-layout{grid-template-columns:1fr}#performanceContent .mpv2-trend-legend{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 16px}#performanceContent .mpv2-trend-legend-row:nth-last-child(2){border-bottom:0}}
+@media(max-width:700px){#performanceContent .mpv2-trend-head{flex-direction:column}#performanceContent .mpv2-trend-cutoffs{width:100%}#performanceContent .mpv2-trend-cutoffs button{flex:1}.mpv2-chart-wrap{overflow-x:auto}#performanceContent .mpv2-line-chart{min-width:680px}#performanceContent .mpv2-trend-legend{grid-template-columns:1fr}#performanceContent .mpv2-trend-legend-row:nth-last-child(2){border-bottom:1px solid rgba(148,163,184,.12)}}

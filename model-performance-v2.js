@@ -1,12 +1,12 @@
 /* =========================================================
    MLB Prop Intelligence — Model Performance V2
-   Build: model-performance-v2-20260909a
+   Build: model-performance-v2-20260909b
    Owns only #performanceView and reads the compact V2 cache.
    ========================================================= */
 (() => {
   "use strict";
 
-  const BUILD = "model-performance-v2-20260909a";
+  const BUILD = "model-performance-v2-20260909b";
   const CACHE_TABLE = "mlb_model_performance_page_cache_v2";
   const PROJECT_URL = "https://squcmdsivnnxzblsfciu.supabase.co";
   const PUBLISHABLE_KEY = "sb_publishable_pumFxQJ7pYyRC8lrjSvtZA_x63TVYtq";
@@ -19,6 +19,12 @@
     pitcher_strikeouts: { label: "Pitcher Ks", short: "Pitcher Ks", icon: "K", prop: "Pitcher Strikeouts" }
   };
   const MODEL_ORDER = ["hit_v3", "total_bases_2plus", "home_run_1plus", "pitcher_strikeouts"];
+  const TREND_COLORS = {
+    hit_v3: "#38bdf8",
+    total_bases_2plus: "#34d399",
+    home_run_1plus: "#a78bfa",
+    pitcher_strikeouts: "#fbbf24"
+  };
   const WINDOWS = {
     last7: "Last 7 Days",
     last30: "Last 30 Days",
@@ -31,7 +37,8 @@
     sections: {},
     loading: false,
     error: null,
-    lastLoadedAt: null
+    lastLoadedAt: null,
+    trendCutoff: 5
   };
 
   const el = id => document.getElementById(id);
@@ -174,14 +181,40 @@
   }
 
   function trendSection() {
-    let rows = Array.isArray(state.sections.daily) ? state.sections.daily : [];
-    rows = modelRows(rows).filter(r => Number(r.cutoff) === 5).sort((a,b)=>String(a.game_date).localeCompare(String(b.game_date)));
+    const allDaily = Array.isArray(state.sections.daily) ? state.sections.daily : [];
+    const cutoff = Number(state.trendCutoff || 5);
+    let rows = modelRows(allDaily).filter(r => Number(r.cutoff) === cutoff && num(r.hit_rate_pct) != null)
+      .sort((a,b)=>String(a.game_date).localeCompare(String(b.game_date)));
     if (!rows.length) return "";
-    const max = 100;
-    const grouped = {};
-    rows.forEach(r => { (grouped[r.model_key] ||= []).push(r); });
-    return `<section class="mpv2-panel"><div class="mpv2-panel-heading"><div><span class="mpv2-kicker">TOP 5 · DAILY</span><h2>Performance Trend</h2><p>Daily Top-5 recommendation hit rate. New dates will extend this history automatically.</p></div></div>
-      <div class="mpv2-trend-list">${Object.entries(grouped).map(([key,arr]) => `<div class="mpv2-trend-row"><div class="mpv2-trend-label"><span class="mpv2-model-icon small">${MODEL_META[key]?.icon||"•"}</span><strong>${esc(MODEL_META[key]?.label||key)}</strong></div><div class="mpv2-trend-days">${arr.map(r=>`<div class="mpv2-day-cell"><div class="mpv2-day-bar"><i style="height:${Math.max(2, Math.min(max, num(r.hit_rate_pct)||0))}%"></i></div><strong>${pct(r.hit_rate_pct)}</strong><span>${dateLabel(r.game_date)}</span></div>`).join("")}</div></div>`).join("")}</div></section>`;
+
+    const keys = state.model === "overview" ? MODEL_ORDER.filter(k => rows.some(r => r.model_key === k)) : [state.model];
+    const dates = [...new Set(rows.map(r => r.game_date))].sort();
+    const W = 1000, H = 330, L = 58, R = 22, T = 24, B = 42;
+    const plotW = W-L-R, plotH = H-T-B;
+    const x = i => dates.length <= 1 ? L + plotW/2 : L + (i/(dates.length-1))*plotW;
+    const y = v => T + (1-(Math.max(0,Math.min(100,Number(v)))/100))*plotH;
+    const ticks = [0,25,50,75,100];
+    const grid = ticks.map(v => `<g><line x1="${L}" y1="${y(v)}" x2="${W-R}" y2="${y(v)}" class="mpv2-chart-grid"/><text x="${L-12}" y="${y(v)+4}" text-anchor="end" class="mpv2-chart-axis">${v}%</text></g>`).join("");
+    const dateTicks = dates.map((d,i) => `<g><line x1="${x(i)}" y1="${T}" x2="${x(i)}" y2="${H-B}" class="mpv2-chart-vgrid"/><text x="${x(i)}" y="${H-13}" text-anchor="middle" class="mpv2-chart-axis">${esc(dateLabel(d))}</text></g>`).join("");
+    const series = keys.map(key => {
+      const byDate = new Map(rows.filter(r=>r.model_key===key).map(r=>[r.game_date,r]));
+      const pts = dates.map((d,i) => byDate.has(d) ? {x:x(i), y:y(byDate.get(d).hit_rate_pct), r:byDate.get(d)} : null).filter(Boolean);
+      if (!pts.length) return "";
+      const color = TREND_COLORS[key] || "#38bdf8";
+      const path = pts.length === 1 ? "" : `M ${pts.map(p=>`${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(" L ")}`;
+      return `${path ? `<path d="${path}" fill="none" stroke="${color}" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" class="mpv2-chart-line"/>` : ""}${pts.map(p=>`<circle cx="${p.x}" cy="${p.y}" r="5" fill="${color}" stroke="#071426" stroke-width="3"><title>${esc(MODEL_META[key]?.label||key)} · ${dateLabel(p.r.game_date)} · ${pct(p.r.hit_rate_pct)} (${num(p.r.wins)||0}-${num(p.r.losses)||0})</title></circle>`).join("")}`;
+    }).join("");
+
+    const legend = keys.map(key => {
+      const modelRowsForCutoff = rows.filter(r=>r.model_key===key);
+      const wins = modelRowsForCutoff.reduce((s,r)=>s+(num(r.wins)||0),0);
+      const losses = modelRowsForCutoff.reduce((s,r)=>s+(num(r.losses)||0),0);
+      const rate = wins+losses ? wins/(wins+losses)*100 : null;
+      return `<div class="mpv2-trend-legend-row"><span class="mpv2-trend-swatch" style="--trend-color:${TREND_COLORS[key]}"></span><div><strong>${esc(MODEL_META[key]?.label||key)}</strong><span>${wins}–${losses} record</span></div><b>${pct(rate)}</b></div>`;
+    }).join("");
+
+    return `<section class="mpv2-panel mpv2-trend-panel"><div class="mpv2-trend-head"><div><span class="mpv2-kicker">MARKET EDGE · PERFORMANCE TREND</span><h2>Performance Trend</h2><p>Daily Top-${cutoff} recommendation hit rate. The chart extends automatically as new results are scored.</p></div><div class="mpv2-trend-cutoffs" aria-label="Trend rank cutoff">${[1,5,10].map(c=>`<button type="button" class="${cutoff===c?'active':''}" data-mpv2-trend-cutoff="${c}">Top ${c}</button>`).join('')}</div></div>
+      <div class="mpv2-trend-chart-layout"><div class="mpv2-chart-wrap"><svg class="mpv2-line-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Model performance trend chart">${grid}${dateTicks}<line x1="${L}" y1="${H-B}" x2="${W-R}" y2="${H-B}" class="mpv2-chart-base"/>${series}</svg></div><aside class="mpv2-trend-legend">${legend}</aside></div></section>`;
   }
 
   function calibrationSection() {
@@ -250,6 +283,10 @@
     root.querySelectorAll("[data-mpv2-window]").forEach(btn => btn.addEventListener("click", () => {
       state.window = btn.dataset.mpv2Window;
       saveState(); render();
+    }));
+    root.querySelectorAll("[data-mpv2-trend-cutoff]").forEach(btn => btn.addEventListener("click", () => {
+      state.trendCutoff = Number(btn.dataset.mpv2TrendCutoff) || 5;
+      render();
     }));
   }
 
