@@ -1,6 +1,6 @@
 /* =========================================================
    Market Edge Live Preview
-   Build: market-edge-live-preview-20260908a
+   Build: market-edge-live-preview-20260908b
 
    SAFE ROLLOUT CONTRACT
    - Does not modify market-edge-v2.js.
@@ -11,7 +11,7 @@
 (() => {
   "use strict";
 
-  const BUILD = "market-edge-live-preview-20260908a";
+  const BUILD = "market-edge-live-preview-20260908b";
   const ENABLED = new URLSearchParams(window.location.search).get("meLive") === "1";
   if (!ENABLED) {
     console.info(`Market Edge Live Preview dormant: ${BUILD}`);
@@ -415,6 +415,19 @@
       </section>`;
   }
 
+  function enforceLiveOnlyLayout(root, control, host) {
+    // Live owns the content area while active. Keep only the shared controls
+    // and Live preview host visible; hide stable Daily Summary/opportunity sections.
+    [...root.children].forEach(child => {
+      const keep = child === control || child === host || child.contains(control);
+      if (keep) {
+        child.style.removeProperty("display");
+      } else {
+        child.style.display = "none";
+      }
+    });
+  }
+
   function renderPreview() {
     const root = document.getElementById("marketEdgeContent");
     if (!root || !state.active) return;
@@ -422,20 +435,20 @@
     installLiveButton();
     markScopeButtons();
 
+    const control = root.querySelector(".mev2-control-card");
+    if (!control) return;
+
     let host = root.querySelector("#meLivePreviewHost");
     if (!host) {
-      const control = root.querySelector(".mev2-control-card");
-      if (!control) return;
-
-      [...root.children].forEach(child => {
-        if (!child.contains(control) && child !== control) child.style.display = "none";
-      });
-
       host = document.createElement("div");
       host.id = "meLivePreviewHost";
       host.className = "me-live-preview-host";
       control.insertAdjacentElement("afterend", host);
     }
+
+    // IMPORTANT: enforce this on every render. The stable core can re-render
+    // after prop/ranking changes and recreate its Daily Summary/table.
+    enforceLiveOnlyLayout(root, control, host);
 
     if (state.loading) {
       host.innerHTML = `
@@ -530,10 +543,20 @@
         pitcherLiveRows: state.pitcherLive.size,
         visibleRows: rows.length,
         liveRowsValid: rows.every(isLive),
-        max25: rows.length <= 25
+        max25: rows.length <= 25,
+        liveOnlyLayout: (() => {
+          const root = document.getElementById("marketEdgeContent");
+          const host = root?.querySelector("#meLivePreviewHost");
+          const control = root?.querySelector(".mev2-control-card");
+          if (!state.active || !root || !host || !control) return true;
+          return [...root.children].every(child =>
+            child === control || child === host || child.contains(control) ||
+            getComputedStyle(child).display === "none"
+          );
+        })()
       };
       tests.pass = tests.enabledByQueryParam && tests.stableCoreUntouched &&
-        tests.liveRowsValid && tests.max25;
+        tests.liveRowsValid && tests.max25 && tests.liveOnlyLayout;
       console.table(tests);
       return tests;
     };
