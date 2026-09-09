@@ -129,12 +129,16 @@
   }
 
 
-  function modelIconSvg(key) {
+  function modelIconSvg(key, compact = false) {
+    const size = compact ? 20 : 38;
+    const svgOpen = `<svg viewBox="0 0 48 48" width="${size}" height="${size}" style="display:block" aria-hidden="true">`;
+
     if (key === "hit_v3") {
-      return `<svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="15" fill="#f8fafc"/><path d="M14.8 13.8c4.2 4.5 5.9 9.3 5.1 14.4M33.2 13.8c-4.2 4.5-5.9 9.3-5.1 14.4M15.2 34.1c3.9-3.3 5.5-7.3 4.8-12M32.8 34.1c-3.9-3.3-5.5-7.3-4.8-12" fill="none" stroke="#ef4444" stroke-width="2.1" stroke-linecap="round"/><path d="M18.2 18.2l-2.3 1.3M19.3 21.5l-2.4 1.1M29.8 18.2l2.3 1.3M28.7 21.5l2.4 1.1M18.5 29.5l-2.2-1.2M29.5 29.5l2.2-1.2" stroke="#ef4444" stroke-width="1.4" stroke-linecap="round"/></svg>`;
+      return `${svgOpen}<circle cx="24" cy="24" r="15" fill="#f8fafc"/><path d="M14.8 13.8c4.2 4.5 5.9 9.3 5.1 14.4M33.2 13.8c-4.2 4.5-5.9 9.3-5.1 14.4M15.2 34.1c3.9-3.3 5.5-7.3 4.8-12M32.8 34.1c-3.9-3.3-5.5-7.3-4.8-12" fill="none" stroke="#ef4444" stroke-width="2.1" stroke-linecap="round"/><path d="M18.2 18.2l-2.3 1.3M19.3 21.5l-2.4 1.1M29.8 18.2l2.3 1.3M28.7 21.5l2.4 1.1M18.5 29.5l-2.2-1.2M29.5 29.5l2.2-1.2" stroke="#ef4444" stroke-width="1.4" stroke-linecap="round"/></svg>`;
     }
+
     if (key === "total_bases_2plus") {
-      return `<svg viewBox="0 0 48 48" aria-hidden="true">
+      return `${svgOpen}
         <g transform="translate(24 24) rotate(45) translate(-24 -24)">
           <rect x="13.5" y="13.5" width="21" height="21" rx="2.6" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.5"/>
           <rect x="16.8" y="16.8" width="14.4" height="14.4" rx="1.5" fill="#e5e7eb"/>
@@ -142,21 +146,29 @@
         </g>
       </svg>`;
     }
+
     if (key === "home_run_1plus") {
-      return `<svg viewBox="0 0 48 48" aria-hidden="true">
-        <g fill="none" stroke-linecap="round">
-          <path d="M24 26V10M24 18L17 12M24 18l7-6M20 24l-10-3M28 24l10-3M19 27l-8 7M29 27l8 7" stroke="#fb7185" stroke-width="2.1"/>
-          <path d="M24 27l-4 11M24 27l4 11M24 27v12" stroke="#38bdf8" stroke-width="1.9"/>
-          <path d="M15 11l-1.4-3M15 11l-3 1.2M33 11l1.4-3M33 11l3 1.2M9.5 20.5l-3-1M38.5 20.5l3-1" stroke="#fbbf24" stroke-width="1.7"/>
+      return `${svgOpen}
+        <!-- Three recognizable aerial firework bursts -->
+        <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+          <g transform="translate(24 20)">
+            <path d="M0-10V-4M0 4v8M-10 0h6M4 0h6M-7-7l4 4M3 3l5 5M7-7l-4 4M-3 3l-5 5" stroke="#fb7185" stroke-width="2.2"/>
+            <path d="M-4-9l2.2 4.8M4-9L1.8-4.2M-9-4l4.8 2.2M9-4L4.2-1.8" stroke="#fbbf24" stroke-width="1.7"/>
+          </g>
+          <g transform="translate(13 30) scale(.62)">
+            <path d="M0-9V-3M0 3v7M-9 0h6M3 0h6M-6-6l4 4M2 2l5 5M6-6l-4 4M-2 2l-5 5" stroke="#38bdf8" stroke-width="2.5"/>
+          </g>
+          <g transform="translate(36 31) scale(.56)">
+            <path d="M0-9V-3M0 3v7M-9 0h6M3 0h6M-6-6l4 4M2 2l5 5M6-6l-4 4M-2 2l-5 5" stroke="#a78bfa" stroke-width="2.7"/>
+          </g>
         </g>
-        <circle cx="24" cy="9" r="1.6" fill="#fbbf24"/>
-        <circle cx="13" cy="10" r="1.2" fill="#38bdf8"/>
-        <circle cx="35" cy="10" r="1.2" fill="#38bdf8"/>
-        <circle cx="8" cy="32" r="1.2" fill="#fbbf24"/>
-        <circle cx="40" cy="32" r="1.2" fill="#fbbf24"/>
+        <circle cx="24" cy="8" r="1.5" fill="#fbbf24"/>
+        <circle cx="14" cy="18" r="1.2" fill="#38bdf8"/>
+        <circle cx="34" cy="16" r="1.2" fill="#fb7185"/>
       </svg>`;
     }
-    return `<span class="mpv2-k-letter" aria-hidden="true">K</span>`;
+
+    return `<span class="mpv2-k-letter" aria-hidden="true" style="${compact ? "font-size:14px" : ""}">K</span>`;
   }
 
   function weekOverWeekFor(modelKey) {
@@ -251,7 +263,7 @@
       <div class="mpv2-rolling-grid">${byModel.map(({key,rows}) => {
         const m=MODEL_META[key];
         const values=[1,5,10].map(c => rows.find(r=>Number(r.cutoff)===c) || {});
-        return `<article class="mpv2-rolling-card"><div class="mpv2-rolling-title"><span class="mpv2-model-icon small">${m.icon}</span><strong>${esc(m.label)}</strong></div>
+        return `<article class="mpv2-rolling-card"><div class="mpv2-rolling-title"><span class="mpv2-model-icon small">${modelIconSvg(key, true)}</span><strong>${esc(m.label)}</strong></div>
           <div class="mpv2-rank-metrics">${values.map((r,i)=>`<div><span>TOP ${[1,5,10][i]}</span><strong>${pct(r.hit_rate_pct)}</strong><small>${num(r.wins)||0}–${num(r.losses)||0} · ${num(r.plays)||0} plays</small></div>`).join("")}</div></article>`;
       }).join("")}</div>
     </section>`;
@@ -309,7 +321,7 @@
     const grouped = {};
     rows.forEach(r => { (grouped[r.model_key] ||= []).push(r); });
     return `<section class="mpv2-panel"><div class="mpv2-panel-heading"><div><span class="mpv2-kicker">PROBABILITY CALIBRATION</span><h2>Predicted vs Actual</h2><p>When the model gives a recommendation a certain probability, how often does that recommendation actually win?</p></div><span class="mpv2-heading-pill">${esc(WINDOWS[state.window])}</span></div>
-      <div class="mpv2-cal-groups">${Object.entries(grouped).map(([key,arr]) => `<article class="mpv2-cal-card"><div class="mpv2-cal-title"><span class="mpv2-model-icon small">${MODEL_META[key]?.icon||"•"}</span><strong>${esc(MODEL_META[key]?.label||key)}</strong></div><div class="mpv2-cal-table-wrap"><table class="mpv2-table compact"><thead><tr><th>Probability</th><th>Predicted</th><th>Actual</th><th>Error</th><th>Plays</th></tr></thead><tbody>${arr.map(r=>`<tr><td><strong>${esc(r.bucket_label)}</strong></td><td>${pct(r.avg_predicted_pct)}</td><td>${pct(r.actual_hit_rate_pct)}</td><td class="${Math.abs(num(r.calibration_error_pct)||0)<=5?'positive':'warning'}">${signedPct(r.calibration_error_pct)}</td><td>${num(r.plays)||0}</td></tr>`).join("")}</tbody></table></div></article>`).join("")}</div></section>`;
+      <div class="mpv2-cal-groups">${Object.entries(grouped).map(([key,arr]) => `<article class="mpv2-cal-card"><div class="mpv2-cal-title"><span class="mpv2-model-icon small">${modelIconSvg(key, true)}</span><strong>${esc(MODEL_META[key]?.label||key)}</strong></div><div class="mpv2-cal-table-wrap"><table class="mpv2-table compact"><thead><tr><th>Probability</th><th>Predicted</th><th>Actual</th><th>Error</th><th>Plays</th></tr></thead><tbody>${arr.map(r=>`<tr><td><strong>${esc(r.bucket_label)}</strong></td><td>${pct(r.avg_predicted_pct)}</td><td>${pct(r.actual_hit_rate_pct)}</td><td class="${Math.abs(num(r.calibration_error_pct)||0)<=5?'positive':'warning'}">${signedPct(r.calibration_error_pct)}</td><td>${num(r.plays)||0}</td></tr>`).join("")}</tbody></table></div></article>`).join("")}</div></section>`;
   }
 
   function bucketSection() {
@@ -318,7 +330,7 @@
     if (!rows.length) return "";
     if (state.model === "overview") {
       const best = MODEL_ORDER.map(key => rows.filter(r=>r.model_key===key && r.sample_reliable).sort((a,b)=>Number(a.hit_rate_rank)-Number(b.hit_rate_rank))[0]).filter(Boolean);
-      return `<section class="mpv2-panel"><div class="mpv2-panel-heading"><div><span class="mpv2-kicker">BUCKET OPTIMIZER</span><h2>Best Reliable Probability Bands</h2><p>Highest realized hit-rate bucket with at least 10 completed plays.</p></div></div><div class="mpv2-bucket-grid">${best.map(r=>`<article class="mpv2-bucket-card"><span class="mpv2-model-icon small">${MODEL_META[r.model_key]?.icon||"•"}</span><div><strong>${esc(r.display_name)}</strong><span>${esc(r.bucket_label)} probability</span></div><div class="mpv2-bucket-rate"><strong>${pct(r.actual_hit_rate_pct)}</strong><span>${num(r.plays)||0} plays</span></div><span class="mpv2-status ${statusClass(r.calibration_status)}">${esc(r.calibration_status)}</span></article>`).join("")}</div></section>`;
+      return `<section class="mpv2-panel"><div class="mpv2-panel-heading"><div><span class="mpv2-kicker">BUCKET OPTIMIZER</span><h2>Best Reliable Probability Bands</h2><p>Highest realized hit-rate bucket with at least 10 completed plays.</p></div></div><div class="mpv2-bucket-grid">${best.map(r=>`<article class="mpv2-bucket-card"><span class="mpv2-model-icon small">${modelIconSvg(r.model_key, true)}</span><div><strong>${esc(r.display_name)}</strong><span>${esc(r.bucket_label)} probability</span></div><div class="mpv2-bucket-rate"><strong>${pct(r.actual_hit_rate_pct)}</strong><span>${num(r.plays)||0} plays</span></div><span class="mpv2-status ${statusClass(r.calibration_status)}">${esc(r.calibration_status)}</span></article>`).join("")}</div></section>`;
     }
     return `<section class="mpv2-panel"><div class="mpv2-panel-heading"><div><span class="mpv2-kicker">BUCKET OPTIMIZER</span><h2>Probability Bucket Performance</h2><p>Ranks model probability bands by actual recommendation hit rate while flagging small samples.</p></div></div><div class="mpv2-table-wrap"><table class="mpv2-table"><thead><tr><th>Rank</th><th>Bucket</th><th>Actual Hit Rate</th><th>Avg Predicted</th><th>Calibration</th><th>Sample</th></tr></thead><tbody>${rows.map(r=>`<tr><td><span class="mpv2-rank-dot">#${r.hit_rate_rank}</span></td><td><strong>${esc(r.bucket_label)}</strong></td><td class="mpv2-rate-cell">${pct(r.actual_hit_rate_pct)}</td><td>${pct(r.avg_predicted_pct)}</td><td><span class="mpv2-status ${statusClass(r.calibration_status)}">${esc(r.calibration_status)}</span></td><td>${num(r.plays)||0}${r.sample_reliable?'':' <small class="mpv2-early">early</small>'}</td></tr>`).join("")}</tbody></table></div></section>`;
   }
