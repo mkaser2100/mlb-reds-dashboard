@@ -1,22 +1,17 @@
 /* =========================================================
-   Market Edge Live Preview
-   Build: market-edge-live-preview-20260908c
+   Market Edge Live
+   Build: market-edge-live-production-20260909a
 
    SAFE ROLLOUT CONTRACT
    - Does not modify market-edge-v2.js.
-   - Does nothing unless URL contains ?meLive=1.
+   - Loads on the normal Market Edge URL.
    - Uses isolated Supabase reads for live data.
    - Normal Market Edge startup remains the stable build.
    ========================================================= */
 (() => {
   "use strict";
 
-  const BUILD = "market-edge-live-preview-20260908c";
-  const ENABLED = new URLSearchParams(window.location.search).get("meLive") === "1";
-  if (!ENABLED) {
-    console.info(`Market Edge Live Preview dormant: ${BUILD}`);
-    return;
-  }
+  const BUILD = "market-edge-live-production-20260909a";
 
   const MARKET_TABLE = "mlb_market_edge_board_public_cache";
   const BATTER_LIVE_TABLE = "mlb_market_edge_batter_live_status";
@@ -252,7 +247,7 @@
       state.lastLoadedAt = new Date().toISOString();
     } catch (err) {
       state.error = err?.message || String(err);
-      console.error("Market Edge Live Preview failed", err);
+      console.error("Market Edge Live failed", err);
     } finally {
       state.loading = false;
     }
@@ -572,7 +567,7 @@
       const rows = visibleRows();
       const tests = {
         build: BUILD,
-        enabledByQueryParam: ENABLED,
+        availableOnMainUrl: true,
         stableCoreUntouched: true,
         latestDate: state.latestDate,
         marketRows: state.marketRows.length,
@@ -592,13 +587,13 @@
           return redundant.every(node => getComputedStyle(node).display === "none");
         })()
       };
-      tests.pass = tests.enabledByQueryParam && tests.stableCoreUntouched &&
+      tests.pass = tests.availableOnMainUrl && tests.stableCoreUntouched &&
         tests.liveRowsValid && tests.max25 && tests.liveOnlyLayout;
       console.table(tests);
       return tests;
     };
 
-    console.info(`Market Edge Live Preview ready: ${BUILD}`);
+    console.info(`Market Edge Live ready: ${BUILD}`);
   }
 
   // The stable Market Edge module renders asynchronously after page load.
@@ -611,7 +606,7 @@
       boot();
     } else if (attempts >= 80) {
       clearInterval(timer);
-      console.warn("Market Edge Live Preview did not find the stable control card.");
+      console.warn("Market Edge Live did not find the stable control card.");
     }
   }, 100);
 })();
