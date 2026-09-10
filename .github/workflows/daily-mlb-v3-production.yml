@@ -46,6 +46,161 @@ jobs:
       min_log_coverage_pct: "85"
     secrets: inherit
 
+  power_actuals:
+    name: Load HR + Total Bases actuals
+    needs: phase1
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      ACTUALS_TARGET_DATE: ${{ inputs.actuals_target_date || '' }}
+
+    steps:
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Supabase client
+        run: |
+          python -m pip install --upgrade pip
+          pip install supabase
+
+      - name: Load and validate power-model actuals
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os
+          from collections import Counter, defaultdict
+          from datetime import datetime, timedelta
+          from zoneinfo import ZoneInfo
+          from supabase import create_client
+
+          supabase = create_client(
+              os.environ["SUPABASE_URL"],
+              os.environ["SUPABASE_SERVICE_ROLE_KEY"],
+          )
+
+          requested = (os.getenv("ACTUALS_TARGET_DATE") or "").strip()
+          target_date = requested or (
+              datetime.now(ZoneInfo("America/New_York")).date()
+              - timedelta(days=1)
+          ).isoformat()
+
+          targets = ["home_run_1plus", "total_bases_2plus"]
+
+          print(f"Loading HR/TB actuals for: {target_date}")
+
+          result = supabase.rpc(
+              "sync_mlb_ml_batter_prediction_actuals",
+              {"p_game_date": target_date},
+          ).execute()
+
+          print("sync_mlb_ml_batter_prediction_actuals result:")
+          print(result.data)
+
+          response = (
+              supabase
+              .table("mlb_ml_batter_predictions")
+              .select(
+                  "target_name,evaluation_status,actual_loaded,actual_value"
+              )
+              .eq("game_date", target_date)
+              .in_("target_name", targets)
+              .range(0, 9999)
+              .execute()
+          )
+
+          rows = response.data or []
+          if not rows:
+              raise RuntimeError(
+                  f"No HR/TB prediction rows found for {target_date}. "
+                  "Cannot close the power-model actuals loop."
+              )
+
+          counts = defaultdict(Counter)
+          for row in rows:
+              target = row.get("target_name")
+              status = row.get("evaluation_status") or "unknown"
+              counts[target]["total"] += 1
+              counts[target][status] += 1
+              if row.get("actual_loaded"):
+                  counts[target]["actual_loaded"] += 1
+              if row.get("actual_value") is not None:
+                  counts[target]["actual_value_rows"] += 1
+
+          print("Power actuals validation:")
+          for target in targets:
+              print(f"  {target}: {dict(counts[target])}")
+
+          problems = []
+          for target in targets:
+              c = counts[target]
+              if c["total"] <= 0:
+                  problems.append(f"{target}: no prediction rows")
+                  continue
+
+              unresolved = c["total"] - c["evaluated"] - c["dnp"]
+              if unresolved > 0:
+                  problems.append(
+                      f"{target}: {unresolved} unresolved rows "
+                      f"(evaluated={c['evaluated']}, dnp={c['dnp']}, "
+                      f"total={c['total']})"
+                  )
+
+              if c["evaluated"] > 0 and c["actual_value_rows"] < c["evaluated"]:
+                  problems.append(
+                      f"{target}: evaluated rows are missing actual_value "
+                      f"({c['actual_value_rows']}/{c['evaluated']})"
+                  )
+
+          if problems:
+              raise RuntimeError(
+                  "Power-model actuals validation failed: "
+                  + "; ".join(problems)
+              )
+
+          scorecard = (
+              supabase
+              .table("v_mlb_power_daily_scorecard")
+              .select(
+                  "target_name,game_date,model_run_id,model_version,"
+                  "evaluated_rows,overall_success_rate,"
+                  "top1_rate,top5_rate,top10_rate,top25_rate"
+              )
+              .eq("game_date", target_date)
+              .in_("target_name", targets)
+              .execute()
+          )
+
+          scorecard_rows = scorecard.data or []
+          scorecard_targets = {
+              row.get("target_name") for row in scorecard_rows
+          }
+
+          print("Power daily scorecard:")
+          for row in scorecard_rows:
+              print(f"  {row}")
+
+          missing_scorecards = [
+              target for target in targets
+              if target not in scorecard_targets
+          ]
+          if missing_scorecards:
+              raise RuntimeError(
+                  f"Power actuals loaded but daily scorecard is missing "
+                  f"{missing_scorecards} for {target_date}."
+              )
+
+          print(
+              f"HR/TB actuals successfully closed for {target_date}; "
+              "DNP rows remain excluded from evaluated performance."
+          )
+          PY
+
   pitcher_k_actuals:
     # Phase 4B: closes yesterday's shadow prediction -> actual loop.
     # Depend on Statcast as well so BF can be populated when available.
@@ -99,7 +254,7 @@ jobs:
     secrets: inherit
 
   performance:
-    needs: [v3_model, power_models]
+    needs: [v3_model, power_models, power_actuals]
     uses: ./.github/workflows/refresh-mlb-hit-board-performance.yml
     with:
       days_back: "3"
