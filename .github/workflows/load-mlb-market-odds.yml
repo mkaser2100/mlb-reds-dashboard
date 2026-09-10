@@ -12,9 +12,10 @@ on:
         required: false
         default: "all"
         type: string
-  schedule:
-    # Daily pregame refresh. The loader skips games that already started.
-    - cron: "0 14 * * *"
+
+# schedule:
+#   # Daily pregame refresh. The loader skips games that already started.
+#   - cron: "0 14 * * *"
 
 jobs:
   load-mlb-market-odds:
