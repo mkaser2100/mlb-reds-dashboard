@@ -1,11 +1,12 @@
 /* MLB Hit Lab — Pitcher K Recent Workload Extension
-   Adds L5 start context to the SP K player drawer only.
-   Does not alter production model logic or K Board scoring.
-   Build: pitcher-k-workload-v1-20260911a
+   Adds L5 start context to SP K drawers on both K Board and Market Edge.
+   Does not alter production model logic or scoring.
+   Build: pitcher-k-workload-v1-20260911b
 */
 (() => {
-  const BUILD = "pitcher-k-workload-v1-20260911a";
+  const BUILD = "pitcher-k-workload-v1-20260911b";
   const LOG_TABLE = "mlb_pitcher_game_logs";
+  const MARKET_CACHE = "mlb_market_edge_board_public_cache";
   const cache = new Map();
   let activePitcherId = null;
 
@@ -34,7 +35,6 @@
     }).format(d).toUpperCase();
   }
 
-  // Game logs store thirds as decimals (e.g. 3.666... = 3.2 IP in baseball notation).
   function formatInnings(value) {
     const n = Number(value);
     if (!Number.isFinite(n)) return "—";
@@ -54,17 +54,12 @@
   function isWorkloadOutlier(start, seasonAvgPitches) {
     const pitches = Number(start?.pitches);
     if (!Number.isFinite(pitches)) return false;
-
-    // Conservative signal only:
-    // 1) an extreme short workload (<=20 pitches), OR
-    // 2) <=50% of a traditional-SP season workload when baseline is >=60 pitches/start.
     if (pitches <= 20) return true;
     if (
       Number.isFinite(seasonAvgPitches) &&
       seasonAvgPitches >= 60 &&
       pitches <= seasonAvgPitches * 0.5
     ) return true;
-
     return false;
   }
 
@@ -123,9 +118,7 @@
         </div>
 
         <div class="pk-workload-scroll" aria-label="Last five starts">
-          <div class="pk-workload-grid">
-            ${startCells}
-          </div>
+          <div class="pk-workload-grid">${startCells}</div>
         </div>
 
         <div class="pk-workload-averages">
@@ -147,8 +140,7 @@
               <p>One or more recent starts were substantially shorter than this pitcher's norm. Rolling workload metrics may be temporarily distorted.</p>
               <small>Workload pattern only — the cause is not inferred.</small>
             </div>
-          </div>
-        ` : ""}
+          </div>` : ""}
       </section>`;
   }
 
@@ -159,8 +151,8 @@
     }) || null;
   }
 
-  function placeSection(markup) {
-    const drawerBody = document.querySelector("#pitcherKDrawer .pk-drawer-body");
+  function placeSection(drawerId, markup) {
+    const drawerBody = document.querySelector(`#${drawerId} .pk-drawer-body`);
     if (!drawerBody) return null;
 
     drawerBody.querySelector('[data-pk-workload="true"]')?.remove();
@@ -204,32 +196,27 @@
     }
   }
 
-  async function renderForPitcher(pitcherId) {
-    if (!pitcherId) return;
-    const drawer = document.getElementById("pitcherKDrawer");
-    if (!drawer?.classList.contains("open")) return;
+  async function renderIntoDrawer(drawerId, pitcherId) {
+    if (!drawerId || !pitcherId) return;
+    const drawer = document.getElementById(drawerId);
+    if (!drawer) return;
 
-    placeSection(loadingMarkup());
+    drawer.dataset.workloadPitcherId = String(pitcherId);
+    placeSection(drawerId, loadingMarkup());
 
     try {
       const starts = await fetchStarts(pitcherId);
-
-      // Guard against a fast user switch while the request is in flight.
-      if (
-        String(activePitcherId) !== String(pitcherId) ||
-        !drawer.classList.contains("open")
-      ) return;
-
-      placeSection(workloadMarkup(starts));
+      if (String(drawer.dataset.workloadPitcherId || "") !== String(pitcherId)) return;
+      placeSection(drawerId, workloadMarkup(starts));
     } catch (err) {
       console.error("Pitcher K recent workload load failed", err);
-      if (String(activePitcherId) === String(pitcherId)) {
-        placeSection(errorMarkup(err?.message || ""));
+      if (String(drawer.dataset.workloadPitcherId || "") === String(pitcherId)) {
+        placeSection(drawerId, errorMarkup(err?.message || ""));
       }
     }
   }
 
-  function bindPitcherCapture() {
+  function bindKBoardCapture() {
     document.addEventListener("click", (event) => {
       const trigger = event.target.closest?.("[data-pitcher-id]");
       if (!trigger) return;
@@ -237,25 +224,86 @@
     }, true);
   }
 
-  function observeDrawer() {
+  function observeKBoardDrawer() {
     const drawer = document.getElementById("pitcherKDrawer");
     if (!drawer) {
-      setTimeout(observeDrawer, 100);
+      setTimeout(observeKBoardDrawer, 100);
       return;
     }
 
     const observer = new MutationObserver(() => {
       if (drawer.classList.contains("open") && activePitcherId) {
-        queueMicrotask(() => renderForPitcher(activePitcherId));
+        queueMicrotask(() => renderIntoDrawer("pitcherKDrawer", activePitcherId));
       }
     });
 
     observer.observe(drawer, { attributes: true, attributeFilter: ["class"] });
   }
 
+  async function resolveMarketEdgePitcher(rowKey) {
+    if (!rowKey || typeof client === "undefined" || !client?.from) return null;
+
+    const { data, error } = await client
+      .from(MARKET_CACHE)
+      .select("prop_type,player_id")
+      .eq("row_key", rowKey)
+      .maybeSingle();
+
+    if (error) {
+      console.error("Pitcher K workload Market Edge lookup failed", error);
+      return null;
+    }
+
+    if (data?.prop_type !== "pitcher_strikeouts" || !data?.player_id) return null;
+    return data.player_id;
+  }
+
+  async function renderMarketEdgeFromNode(node) {
+    const rowKey = node?.dataset?.mev2Row;
+    if (!rowKey) return;
+
+    const pitcherId = await resolveMarketEdgePitcher(rowKey);
+    if (!pitcherId) return;
+
+    let attempts = 0;
+    const attach = () => {
+      const drawer = document.getElementById("marketUnifiedDrawer");
+      const body = drawer?.querySelector(".pk-drawer-body");
+      const title = drawer?.querySelector(".pk-kicker")?.textContent?.trim();
+
+      if (drawer && body && title === "PITCHER DETAIL") {
+        renderIntoDrawer("marketUnifiedDrawer", pitcherId);
+        return;
+      }
+
+      attempts += 1;
+      if (attempts < 20) setTimeout(attach, 25);
+    };
+
+    attach();
+  }
+
+  function bindMarketEdgeCapture() {
+    document.addEventListener("click", (event) => {
+      const node = event.target.closest?.("#marketEdgeContent [data-mev2-row]");
+      if (!node) return;
+      renderMarketEdgeFromNode(node);
+    }, true);
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      const node = event.target.closest?.("#marketEdgeContent [data-mev2-row]");
+      if (!node) return;
+      renderMarketEdgeFromNode(node);
+    }, true);
+  }
+
+  window.PitcherKWorkload = Object.freeze({ renderIntoDrawer });
+
   function init() {
-    bindPitcherCapture();
-    observeDrawer();
+    bindKBoardCapture();
+    observeKBoardDrawer();
+    bindMarketEdgeCapture();
     console.info(`MLB Hit Lab ${BUILD} loaded`);
   }
 
