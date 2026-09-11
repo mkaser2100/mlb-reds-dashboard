@@ -1,14 +1,16 @@
 /* MLB Hit Lab — Pitcher K Recent Workload Extension
    Adds L5 start context to SP K drawers on both K Board and Market Edge.
    Does not alter production model logic or scoring.
-   Build: pitcher-k-workload-v1-20260911b
+   Build: pitcher-k-workload-v1-20260911c
 */
 (() => {
-  const BUILD = "pitcher-k-workload-v1-20260911b";
+  const BUILD = "pitcher-k-workload-v1-20260911c";
   const LOG_TABLE = "mlb_pitcher_game_logs";
   const MARKET_CACHE = "mlb_market_edge_board_public_cache";
   const cache = new Map();
+
   let activePitcherId = null;
+  let marketRequestToken = 0;
 
   const esc = (v) => String(v ?? "").replace(/[&<>'"]/g, (c) => (
     {"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[c]
@@ -54,12 +56,14 @@
   function isWorkloadOutlier(start, seasonAvgPitches) {
     const pitches = Number(start?.pitches);
     if (!Number.isFinite(pitches)) return false;
+
     if (pitches <= 20) return true;
     if (
       Number.isFinite(seasonAvgPitches) &&
       seasonAvgPitches >= 60 &&
       pitches <= seasonAvgPitches * 0.5
     ) return true;
+
     return false;
   }
 
@@ -81,6 +85,7 @@
 
   function workloadMarkup(allStarts) {
     const starts = (allStarts || []).slice(0, 5);
+
     if (!starts.length) {
       return `
         <section class="pk-drawer-section pk-workload-section" data-pk-workload="true">
@@ -94,6 +99,7 @@
 
     const startCells = starts.map((s) => {
       const outlier = isWorkloadOutlier(s, seasonAvgPitches);
+
       return `
         <div class="pk-workload-start ${outlier ? "is-outlier" : ""}">
           <div class="pk-workload-date">${esc(formatDate(s.game_date))}</div>
@@ -159,6 +165,7 @@
 
     const holder = document.createElement("div");
     holder.innerHTML = markup.trim();
+
     const section = holder.firstElementChild;
     const distribution = findDistributionSection(drawerBody);
 
@@ -198,6 +205,7 @@
 
   async function renderIntoDrawer(drawerId, pitcherId) {
     if (!drawerId || !pitcherId) return;
+
     const drawer = document.getElementById(drawerId);
     if (!drawer) return;
 
@@ -206,15 +214,22 @@
 
     try {
       const starts = await fetchStarts(pitcherId);
-      if (String(drawer.dataset.workloadPitcherId || "") !== String(pitcherId)) return;
+
+      if (String(drawer.dataset.workloadPitcherId || "") !== String(pitcherId)) {
+        return;
+      }
+
       placeSection(drawerId, workloadMarkup(starts));
     } catch (err) {
       console.error("Pitcher K recent workload load failed", err);
+
       if (String(drawer.dataset.workloadPitcherId || "") === String(pitcherId)) {
         placeSection(drawerId, errorMarkup(err?.message || ""));
       }
     }
   }
+
+  /* ---------------- K Board ---------------- */
 
   function bindKBoardCapture() {
     document.addEventListener("click", (event) => {
@@ -226,6 +241,7 @@
 
   function observeKBoardDrawer() {
     const drawer = document.getElementById("pitcherKDrawer");
+
     if (!drawer) {
       setTimeout(observeKBoardDrawer, 100);
       return;
@@ -237,15 +253,20 @@
       }
     });
 
-    observer.observe(drawer, { attributes: true, attributeFilter: ["class"] });
+    observer.observe(drawer, {
+      attributes: true,
+      attributeFilter: ["class"]
+    });
   }
+
+  /* ---------------- Market Edge ---------------- */
 
   async function resolveMarketEdgePitcher(rowKey) {
     if (!rowKey || typeof client === "undefined" || !client?.from) return null;
 
     const { data, error } = await client
       .from(MARKET_CACHE)
-      .select("prop_type,player_id")
+      .select("prop_type,player_id,player_name")
       .eq("row_key", rowKey)
       .maybeSingle();
 
@@ -254,33 +275,83 @@
       return null;
     }
 
-    if (data?.prop_type !== "pitcher_strikeouts" || !data?.player_id) return null;
-    return data.player_id;
+    if (
+      data?.prop_type !== "pitcher_strikeouts" ||
+      !data?.player_id ||
+      !data?.player_name
+    ) {
+      return null;
+    }
+
+    return {
+      pitcherId: data.player_id,
+      pitcherName: String(data.player_name)
+    };
+  }
+
+  function waitForFreshMarketDrawer(meta, priorHeaderNode, requestToken) {
+    let attempts = 0;
+
+    const tryAttach = () => {
+      if (requestToken !== marketRequestToken) return;
+
+      const content = document.getElementById("marketUnifiedDrawerContent");
+      const drawer = document.getElementById("marketUnifiedDrawer");
+
+      const currentHeaderNode = content?.firstElementChild || null;
+      const kicker = content?.querySelector(".pk-kicker")?.textContent?.trim();
+      const pitcherName = content?.querySelector(".pk-drawer-header h2")?.textContent?.trim();
+      const drawerBody = content?.querySelector(".pk-drawer-body");
+
+      // Critical race fix:
+      // Do not attach to the OLD drawer contents left behind from the previous SP.
+      // market-edge-unified-drawer.js replaces marketUnifiedDrawerContent.innerHTML.
+      // A different firstElementChild proves that fresh render has happened.
+      const freshRender = currentHeaderNode && currentHeaderNode !== priorHeaderNode;
+
+      if (
+        drawer &&
+        drawerBody &&
+        freshRender &&
+        kicker === "PITCHER DETAIL" &&
+        pitcherName === meta.pitcherName
+      ) {
+        renderIntoDrawer("marketUnifiedDrawer", meta.pitcherId);
+        return;
+      }
+
+      attempts += 1;
+
+      // Allow up to ~3 seconds for Market Edge's own async row + K-cache lookups.
+      if (attempts < 120) {
+        setTimeout(tryAttach, 25);
+      } else {
+        console.warn(
+          "Pitcher K workload: fresh Market Edge pitcher drawer was not observed",
+          meta.pitcherName
+        );
+      }
+    };
+
+    tryAttach();
   }
 
   async function renderMarketEdgeFromNode(node) {
     const rowKey = node?.dataset?.mev2Row;
     if (!rowKey) return;
 
-    const pitcherId = await resolveMarketEdgePitcher(rowKey);
-    if (!pitcherId) return;
+    const requestToken = ++marketRequestToken;
 
-    let attempts = 0;
-    const attach = () => {
-      const drawer = document.getElementById("marketUnifiedDrawer");
-      const body = drawer?.querySelector(".pk-drawer-body");
-      const title = drawer?.querySelector(".pk-kicker")?.textContent?.trim();
+    // Snapshot the currently rendered drawer BEFORE Market Edge replaces it.
+    // This prevents the extension from injecting into stale SP content.
+    const priorHeaderNode =
+      document.getElementById("marketUnifiedDrawerContent")?.firstElementChild || null;
 
-      if (drawer && body && title === "PITCHER DETAIL") {
-        renderIntoDrawer("marketUnifiedDrawer", pitcherId);
-        return;
-      }
+    const meta = await resolveMarketEdgePitcher(rowKey);
 
-      attempts += 1;
-      if (attempts < 20) setTimeout(attach, 25);
-    };
+    if (!meta || requestToken !== marketRequestToken) return;
 
-    attach();
+    waitForFreshMarketDrawer(meta, priorHeaderNode, requestToken);
   }
 
   function bindMarketEdgeCapture() {
@@ -292,18 +363,23 @@
 
     document.addEventListener("keydown", (event) => {
       if (event.key !== "Enter" && event.key !== " ") return;
+
       const node = event.target.closest?.("#marketEdgeContent [data-mev2-row]");
       if (!node) return;
+
       renderMarketEdgeFromNode(node);
     }, true);
   }
 
-  window.PitcherKWorkload = Object.freeze({ renderIntoDrawer });
+  window.PitcherKWorkload = Object.freeze({
+    renderIntoDrawer
+  });
 
   function init() {
     bindKBoardCapture();
     observeKBoardDrawer();
     bindMarketEdgeCapture();
+
     console.info(`MLB Hit Lab ${BUILD} loaded`);
   }
 
