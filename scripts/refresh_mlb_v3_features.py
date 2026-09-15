@@ -19,6 +19,10 @@ REFRESH_REQUEST_TIMEOUT_SECONDS = 620
 STATUS_REQUEST_TIMEOUT_SECONDS = 30
 POLL_INTERVAL_SECONDS = 15
 POLL_TIMEOUT_SECONDS = 15 * 60
+AMBIGUOUS_START_GRACE_SECONDS = 90
+AMBIGUOUS_START_POLL_INTERVAL_SECONDS = 15
+AMBIGUOUS_SUBMISSION_RETRIES = 2
+AMBIGUOUS_RETRY_DELAY_SECONDS = 30
 LOCK_RETRY_DELAY_SECONDS = 60
 MAX_LOCK_TIMEOUT_RETRIES = 1
 
@@ -279,6 +283,30 @@ def is_lock_timeout_response(response):
     )
 
 
+def wait_for_refresh_start(
+    session,
+    supabase_url,
+    headers,
+    game_date,
+    baseline_run_id,
+    *,
+    timeout_seconds=AMBIGUOUS_START_GRACE_SECONDS,
+    interval_seconds=AMBIGUOUS_START_POLL_INTERVAL_SECONDS,
+):
+    """Return new refresh runs once the database has actually recorded a submission."""
+    deadline = time.monotonic() + timeout_seconds
+
+    while time.monotonic() < deadline:
+        rows = fetch_refresh_runs(session, supabase_url, headers, game_date)
+        runs = latest_runs_by_family(rows, newer_than_run_id=baseline_run_id)
+        if runs:
+            return runs
+
+        time.sleep(interval_seconds)
+
+    return {}
+
+
 def poll_for_completion(
     session,
     supabase_url,
@@ -410,46 +438,129 @@ def main() -> int:
             f"Baseline refresh_run_id={baseline_run_id}."
         )
 
-        ambiguous_error = None
+        for submission_attempt in range(1, AMBIGUOUS_SUBMISSION_RETRIES + 2):
+            ambiguous_error = None
 
-        for attempt in range(MAX_LOCK_TIMEOUT_RETRIES + 1):
-            try:
-                response = submit_refresh_once(
+            for lock_attempt in range(MAX_LOCK_TIMEOUT_RETRIES + 1):
+                try:
+                    response = submit_refresh_once(
+                        session,
+                        endpoint,
+                        headers,
+                        args.game_date,
+                    )
+                except requests.RequestException as exc:
+                    ambiguous_error = exc
+                    print(
+                        "Refresh RPC ended with an ambiguous network error. "
+                        f"Submission attempt {submission_attempt}/"
+                        f"{AMBIGUOUS_SUBMISSION_RETRIES + 1}. Error: {exc}",
+                        file=sys.stderr,
+                    )
+                    break
+
+                if response.ok:
+                    try:
+                        payload = response.json()
+                    except ValueError:
+                        payload = response.text
+
+                    post_status = get_pipeline_status(
+                        session,
+                        supabase_url,
+                        headers,
+                        args.game_date,
+                    )
+                    post_feature_rows = int(post_status.get("feature_row_count") or 0)
+
+                    if (
+                        int(post_status.get("eligible_game_count") or 0) > 0
+                        and post_feature_rows <= 0
+                    ):
+                        raise RuntimeError(
+                            "V3 enhancement refresh returned success, but the wide "
+                            f"feature source is still empty for {args.game_date.isoformat()}. "
+                            f"Pipeline status: {json.dumps(post_status, default=str)}"
+                        )
+
+                    print(
+                        json.dumps(
+                            {
+                                "status": "complete",
+                                "completion_source": "refresh_rpc",
+                                "game_date": args.game_date.isoformat(),
+                                "response": payload,
+                                "pipeline_status": post_status,
+                            },
+                            default=str,
+                            indent=2,
+                        )
+                    )
+                    return 0
+
+                if is_lock_timeout_response(response):
+                    if lock_attempt < MAX_LOCK_TIMEOUT_RETRIES:
+                        print(
+                            "V3 feature refresh hit PostgreSQL lock timeout. "
+                            f"Waiting {LOCK_RETRY_DELAY_SECONDS}s before retrying once...",
+                            file=sys.stderr,
+                        )
+                        time.sleep(LOCK_RETRY_DELAY_SECONDS)
+                        continue
+                    response.raise_for_status()
+
+                if response.status_code >= 500:
+                    ambiguous_error = requests.HTTPError(
+                        f"HTTP {response.status_code}: {response.text[:1000]}"
+                    )
+                    break
+
+                response.raise_for_status()
+
+            if ambiguous_error is None:
+                raise RuntimeError(
+                    "V3 feature refresh ended without a successful response or an "
+                    "ambiguous error to reconcile."
+                )
+
+            print(
+                "Checking whether the ambiguous submission actually created a "
+                f"refresh run. Grace period: {AMBIGUOUS_START_GRACE_SECONDS}s."
+            )
+            started_runs = wait_for_refresh_start(
+                session,
+                supabase_url,
+                headers,
+                args.game_date,
+                baseline_run_id,
+            )
+
+            if started_runs:
+                print(
+                    "A new V3 refresh run was recorded after the ambiguous response; "
+                    "polling it to completion instead of resubmitting."
+                )
+                runs = poll_for_completion(
                     session,
-                    endpoint,
+                    supabase_url,
                     headers,
                     args.game_date,
+                    baseline_run_id,
                 )
-            except requests.RequestException as exc:
-                ambiguous_error = exc
-                print(
-                    "Refresh RPC ended with an ambiguous network error; "
-                    f"the database may still be running it. Error: {exc}",
-                    file=sys.stderr,
-                )
-                break
-
-            if response.ok:
-                try:
-                    payload = response.json()
-                except ValueError:
-                    payload = response.text
-
                 post_status = get_pipeline_status(
                     session,
                     supabase_url,
                     headers,
                     args.game_date,
                 )
-                post_feature_rows = int(post_status.get("feature_row_count") or 0)
 
                 if (
                     int(post_status.get("eligible_game_count") or 0) > 0
-                    and post_feature_rows <= 0
+                    and int(post_status.get("feature_row_count") or 0) <= 0
                 ):
                     raise RuntimeError(
-                        "V3 enhancement refresh returned success, but the wide "
-                        f"feature source is still empty for {args.game_date.isoformat()}. "
+                        "Refresh families completed after an ambiguous response, "
+                        "but the wide V3 feature source is still empty. "
                         f"Pipeline status: {json.dumps(post_status, default=str)}"
                     )
 
@@ -457,9 +568,10 @@ def main() -> int:
                     json.dumps(
                         {
                             "status": "complete",
-                            "completion_source": "refresh_rpc",
+                            "completion_source": "post_error_poll",
                             "game_date": args.game_date.isoformat(),
-                            "response": payload,
+                            "ambiguous_error": str(ambiguous_error),
+                            "refresh_runs": summarize_runs(runs),
                             "pipeline_status": post_status,
                         },
                         default=str,
@@ -468,70 +580,26 @@ def main() -> int:
                 )
                 return 0
 
-            if is_lock_timeout_response(response):
-                if attempt < MAX_LOCK_TIMEOUT_RETRIES:
-                    print(
-                        "V3 feature refresh hit PostgreSQL lock timeout. "
-                        f"Waiting {LOCK_RETRY_DELAY_SECONDS}s before retrying once...",
-                        file=sys.stderr,
-                    )
-                    time.sleep(LOCK_RETRY_DELAY_SECONDS)
-                    continue
-                response.raise_for_status()
-
-            if response.status_code >= 500:
-                ambiguous_error = requests.HTTPError(
-                    f"HTTP {response.status_code}: {response.text[:1000]}"
+            if submission_attempt <= AMBIGUOUS_SUBMISSION_RETRIES:
+                print(
+                    "No refresh run appeared after the ambiguous response. "
+                    "Treating this as a failed RPC submission rather than a running "
+                    "database job. "
+                    f"Retrying in {AMBIGUOUS_RETRY_DELAY_SECONDS}s "
+                    f"(next submission attempt {submission_attempt + 1}/"
+                    f"{AMBIGUOUS_SUBMISSION_RETRIES + 1})...",
+                    file=sys.stderr,
                 )
-                break
+                time.sleep(AMBIGUOUS_RETRY_DELAY_SECONDS)
+                continue
 
-            response.raise_for_status()
-
-        if ambiguous_error is not None:
-            runs = poll_for_completion(
-                session,
-                supabase_url,
-                headers,
-                args.game_date,
-                baseline_run_id,
+            raise RuntimeError(
+                "V3 enhancement refresh could not be submitted successfully. "
+                f"After {AMBIGUOUS_SUBMISSION_RETRIES + 1} submission attempts, "
+                f"no refresh rows newer than refresh_run_id={baseline_run_id} "
+                f"appeared for {args.game_date.isoformat()}. "
+                f"Last ambiguous error: {ambiguous_error}"
             )
-            post_status = get_pipeline_status(
-                session,
-                supabase_url,
-                headers,
-                args.game_date,
-            )
-
-            if (
-                int(post_status.get("eligible_game_count") or 0) > 0
-                and int(post_status.get("feature_row_count") or 0) <= 0
-            ):
-                raise RuntimeError(
-                    "Refresh families completed after an ambiguous response, "
-                    "but the wide V3 feature source is still empty. "
-                    f"Pipeline status: {json.dumps(post_status, default=str)}"
-                )
-
-            print(
-                json.dumps(
-                    {
-                        "status": "complete",
-                        "completion_source": "post_error_poll",
-                        "game_date": args.game_date.isoformat(),
-                        "ambiguous_error": str(ambiguous_error),
-                        "refresh_runs": summarize_runs(runs),
-                        "pipeline_status": post_status,
-                    },
-                    default=str,
-                    indent=2,
-                )
-            )
-            return 0
-
-        raise RuntimeError(
-            "V3 feature refresh ended without a successful response or an "
-            "ambiguous error to reconcile."
-        )
 
     except Exception as exc:
         print(f"V3 feature refresh failed: {exc}", file=sys.stderr)
