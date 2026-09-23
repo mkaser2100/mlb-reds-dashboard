@@ -243,7 +243,8 @@ jobs:
                   validation = (
                       supabase.table("mlb_ml_batter_power_features_daily")
                       .select(
-                          "player_id,environment_point_in_time_safe",
+                          "player_id,environment_point_in_time_safe,"
+                          "environment_captured_at",
                           count="exact",
                       )
                       .eq("game_date", run_date)
@@ -257,10 +258,16 @@ jobs:
                       if validation.count is not None
                       else len(rows)
                   )
-                  unsafe_rows = sum(
+                  missing_environment_rows = sum(
                       1
                       for row in rows
-                      if row.get("environment_point_in_time_safe") is not True
+                      if row.get("environment_captured_at") is None
+                  )
+                  unsafe_environment_rows = sum(
+                      1
+                      for row in rows
+                      if row.get("environment_captured_at") is not None
+                      and row.get("environment_point_in_time_safe") is not True
                   )
 
                   coverage_response = supabase.rpc(
@@ -283,15 +290,23 @@ jobs:
 
                   print(
                       f"Validation | rows={row_count} "
-                      f"unsafe_environment={unsafe_rows} "
+                      f"missing_environment={missing_environment_rows} "
+                      f"unsafe_environment={unsafe_environment_rows} "
                       f"eligible_sides={eligible_sides} "
                       f"represented_sides={represented_sides} "
                       f"missing_sides={missing_sides}"
                   )
 
+                  if missing_environment_rows > 0:
+                      print(
+                          f"Info: {missing_environment_rows} feature rows have no "
+                          "pregame environment snapshot. These rows may score with "
+                          "missing/default environment handling; they are not marked safe."
+                      )
+
                   if (
                       row_count > 0
-                      and unsafe_rows == 0
+                      and unsafe_environment_rows == 0
                       and eligible_sides > 0
                       and missing_sides == 0
                   ):
@@ -302,7 +317,8 @@ jobs:
 
                   last_problem = (
                       f"rows={row_count}, "
-                      f"unsafe_environment={unsafe_rows}, "
+                      f"missing_environment={missing_environment_rows}, "
+                      f"unsafe_environment={unsafe_environment_rows}, "
                       f"eligible_sides={eligible_sides}, "
                       f"represented_sides={represented_sides}, "
                       f"missing_sides={missing_sides}"
