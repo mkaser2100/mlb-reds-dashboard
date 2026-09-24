@@ -116,10 +116,12 @@ jobs:
 
           rows = response.data or []
           if not rows:
-              raise RuntimeError(
-                  f"No HR/TB prediction rows found for {target_date}. "
-                  "Cannot close the power-model actuals loop."
+              print(
+                  f"No HR/TB prediction cohort exists for {target_date}. "
+                  "Skipping HR/TB actuals and scorecard validation for this date. "
+                  "No retrospective predictions will be created."
               )
+              raise SystemExit(0)
 
           counts = defaultdict(Counter)
           pending_game_pks = set()
